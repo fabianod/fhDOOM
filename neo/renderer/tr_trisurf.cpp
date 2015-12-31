@@ -30,6 +30,7 @@ If you have questions concerning this license or the applicable additional terms
 #pragma hdrstop
 
 #include "tr_local.h"
+#include "IndexCache.h"
 
 /*
 ==============================================================================
@@ -346,6 +347,10 @@ void R_FreeStaticTriSurfVertexCaches( srfTriangles_t *tri ) {
 		vertexCache.Free( tri->ambientCache );
 		tri->ambientCache = NULL;
 	} 
+	if (tri->ambientIndexCache) {
+		indexCache.Free( tri->ambientIndexCache );
+		tri->ambientIndexCache = NULL;
+	}
 	if ( tri->indexCache ) {
 		vertexCache.Free( tri->indexCache );
 		tri->indexCache = NULL;

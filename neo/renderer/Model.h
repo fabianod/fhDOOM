@@ -134,6 +134,8 @@ typedef struct srfTriangles_s {
 
 	struct srfTriangles_s *		nextDeferredFree;		// chain of tris to free next frame
 
+	const struct indexCache_s *	ambientIndexCache;
+
 	// data in vertex object space, not directly readable by the CPU
 	struct vertCache_s *		indexCache;				// int
 	struct vertCache_s *		ambientCache;			// idDrawVert

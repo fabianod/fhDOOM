@@ -2,6 +2,7 @@
 #pragma hdrstop
 
 #include "tr_local.h"
+#include "IndexCache.h"
 
 idCVar r_smObjectCulling( "r_smObjectCulling", "1", CVAR_RENDERER | CVAR_BOOL | CVAR_ARCHIVE, "cull objects/surfaces that are outside the shadow/light frustum when rendering shadow maps" );
 idCVar r_smFaceCullMode( "r_smFaceCullMode", "2", CVAR_RENDERER|CVAR_INTEGER | CVAR_ARCHIVE, "Determines which faces should be rendered to shadow map: 0=front, 1=back, 2=front-and-back");
@@ -325,12 +326,27 @@ static void RB_RenderShadowCasters(const viewLight_t *vLight, const float* shado
 				}
 			}
 
+			if (r_ignore2.GetBool() && !tri->ambientIndexCache) {
+				tri->ambientIndexCache = indexCache.Alloc( tri->indexes, tri->numIndexes * sizeof(tri->indexes[0]) );
+			}
+
 			const auto offset = vertexCache.Bind( tri->ambientCache );			
 			glVertexAttribPointer( glslProgramDef_t::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::xyzOffset ) );
 			glVertexAttribPointer( glslProgramDef_t::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::texcoordOffset ) );
 			glUniformMatrix4fv(glslProgramDef_t::uniform_modelViewMatrix, 1, false, shadowViewMatrix);
 			glUniform1i(glslProgramDef_t::uniform_alphaTestEnabled, 0);
-			RB_DrawElementsWithCounters( tri );
+
+			if(r_ignore2.GetBool()) {
+				indexCache.Bind(tri->ambientIndexCache);
+				glDrawElements( GL_TRIANGLES,
+					tri->numIndexes,
+					GL_INDEX_TYPE,
+					(void*)tri->ambientIndexCache->offset);
+				indexCache.Unbind();
+			} else 	{
+				RB_DrawElementsWithCounters( tri );
+			}
+
 			backEnd.pc.c_shadowMapDraws++;
 			staticOccluderModelWasRendered = true;
 		}		

@@ -360,6 +360,8 @@ SET(SOURCES
   renderer/tr_turboshadow.cpp
   renderer/VertexCache.cpp
   renderer/VertexCache.h
+  renderer/IndexCache.cpp
+  renderer/indexCache.h
   renderer/wglext.h
   renderer/ImmediateMode.h
   renderer/ImmediateMode.cpp
