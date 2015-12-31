@@ -543,10 +543,4 @@ void idVertexCache::List( void ) {
 	common->Printf( "%5i free static headers\n", numFreeStaticHeaders );
 	common->Printf( "%5i free dynamic headers\n", numFreeDynamicHeaders );	
 	common->Printf( "Vertex cache is in ARB_vertex_buffer_object memory (FAST).\n");	
-
-	if ( r_useIndexBuffers.GetBool() ) {
-		common->Printf( "Index buffers are accelerated.\n" );
-	} else {
-		common->Printf( "Index buffers are not used.\n" );
-	}
 }

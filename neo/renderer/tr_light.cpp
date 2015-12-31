@@ -970,13 +970,6 @@ void R_AddLightSurfaces( void ) {
 			// touch the shadow surface so it won't get purged
 			vertexCache.Touch( tri->shadowCache );
 
-			if ( !tri->indexCache && r_useIndexBuffers.GetBool() ) {
-        tri->indexCache = vertexCache.Alloc( tri->indexes, tri->numIndexes * sizeof( tri->indexes[0] ), true );				
-			}
-			if ( tri->indexCache ) {
-				vertexCache.Touch( tri->indexCache );
-			}
-
 			R_LinkLightSurf( &vLight->globalShadows, tri, NULL, light, NULL, vLight->scissorRect, true /* FIXME? */ );
 		}
 	}
@@ -1341,13 +1334,6 @@ static void R_AddAmbientDrawsurfs( viewEntity_t *vEntity ) {
 			}
 			// touch it so it won't get purged
 			vertexCache.Touch( tri->ambientCache );
-
-			if ( r_useIndexBuffers.GetBool() && !tri->indexCache ) {
-        tri->indexCache = vertexCache.Alloc( tri->indexes, tri->numIndexes * sizeof( tri->indexes[0] ), true );
-			}
-			if ( tri->indexCache ) {
-				vertexCache.Touch( tri->indexCache );
-			}
 
 			// add the surface for drawing
 			R_AddDrawSurf( tri, vEntity, &vEntity->entityDef->parms, shader, vEntity->scissorRect );
