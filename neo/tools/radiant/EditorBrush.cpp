@@ -55,80 +55,79 @@ DrawRenderModel
 ================
 */
 void DrawRenderModel( idRenderModel *model, const idVec3 &origin, const idMat3 &axis, bool cameraView, const idVec3& color ) {
-  const int nDrawMode = g_pParentWnd->GetCamera()->Camera().draw_mode;  
-  const idMat4 modelView = idMat4(axis, origin).Transpose();
+	const int nDrawMode = g_pParentWnd->GetCamera()->Camera().draw_mode;
+	const idMat4 modelView = idMat4( axis, origin ).Transpose();
 
-  GL_ModelViewMatrix.Push();
-  GL_ModelViewMatrix.Load(modelView.ToFloatPtr());
+	GL_ModelViewMatrix.Push();
+	GL_ModelViewMatrix.Load( modelView.ToFloatPtr() );
 
-	for ( int i = 0; i < model->NumSurfaces(); i++ ) {
+	for (int i = 0; i < model->NumSurfaces(); i++) {
 		const modelSurface_t *surf = model->Surface( i );
-		const idMaterial *material = surf->shader;		
+		const idMaterial *material = surf->shader;
 
-    if ( R_CreateAmbientCache(surf->geometry, true) ) {
-      assert(surf->geometry->ambientCache);
+		if (R_CreateAmbientCache( surf->geometry, true )) {
+			assert( surf->geometry->ambientCache );
 
-      int offset = vertexCache.Bind(surf->geometry->ambientCache);
+			int offset = vertexCache.Bind( surf->geometry->ambientCache );
 
-      if (cameraView && (nDrawMode == cd_texture) && material) {
-        GL_UseProgram(defaultProgram);   
-        GL_SelectTexture(1);
-        material->GetEditorImage()->Bind();
-        GL_SelectTexture(0);
+			if (cameraView && (nDrawMode == cd_texture) && material) {
+				GL_UseProgram( defaultProgram );
+				GL_SelectTexture( 1 );
+				material->GetEditorImage()->Bind();
+				GL_SelectTexture( 0 );
 
-        idVec3 colorAdd = color * 0.25;
+				idVec3 colorAdd = color * 0.25;
 
-        glUniform4f(glslProgramDef_t::uniform_color_add, colorAdd.x, colorAdd.y, color.z, 0);
-        glUniform4f(glslProgramDef_t::uniform_color_modulate, 1, 1, 1, 1);
-      } else {
-        GL_UseProgram(vertexColorProgram);      
-        glUniform4f(glslProgramDef_t::uniform_color_add, color.x, color.y, color.z, 1);
-        glUniform4f(glslProgramDef_t::uniform_color_modulate, 0, 0, 0, 0);
-      }
+				glUniform4f( glslProgramDef_t::uniform_color_add, colorAdd.x, colorAdd.y, color.z, 0 );
+				glUniform4f( glslProgramDef_t::uniform_color_modulate, 1, 1, 1, 1 );
+			}
+			else {
+				GL_UseProgram( vertexColorProgram );
+				glUniform4f( glslProgramDef_t::uniform_color_add, color.x, color.y, color.z, 1 );
+				glUniform4f( glslProgramDef_t::uniform_color_modulate, 0, 0, 0, 0 );
+			}
 
-      glUniformMatrix4fv(glslProgramDef_t::uniform_modelViewMatrix, 1, false, GL_ModelViewMatrix.Top());
-      glUniformMatrix4fv(glslProgramDef_t::uniform_projectionMatrix, 1, false, GL_ProjectionMatrix.Top());
-      glUniform4f(glslProgramDef_t::uniform_diffuse_color, 1, 1, 1, 1);
+			glUniformMatrix4fv( glslProgramDef_t::uniform_modelViewMatrix, 1, false, GL_ModelViewMatrix.Top() );
+			glUniformMatrix4fv( glslProgramDef_t::uniform_projectionMatrix, 1, false, GL_ProjectionMatrix.Top() );
+			glUniform4f( glslProgramDef_t::uniform_diffuse_color, 1, 1, 1, 1 );
 
-      glEnableVertexAttribArray(glslProgramDef_t::vertex_attrib_position);
-      glEnableVertexAttribArray(glslProgramDef_t::vertex_attrib_color);
-      glEnableVertexAttribArray(glslProgramDef_t::vertex_attrib_texcoord);
-      glVertexAttribPointer(glslProgramDef_t::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), GL_AttributeOffset(offset, idDrawVert::xyzOffset));
-      glVertexAttribPointer(glslProgramDef_t::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(idDrawVert), GL_AttributeOffset(offset, idDrawVert::colorOffset));
-      glVertexAttribPointer(glslProgramDef_t::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(idDrawVert), GL_AttributeOffset(offset, idDrawVert::texcoordOffset));
-      
-      glDrawElements(GL_TRIANGLES, surf->geometry->numIndexes,  GL_INDEX_TYPE, surf->geometry->indexes);
+			glEnableVertexAttribArray( glslProgramDef_t::vertex_attrib_position );
+			glEnableVertexAttribArray( glslProgramDef_t::vertex_attrib_color );
+			glEnableVertexAttribArray( glslProgramDef_t::vertex_attrib_texcoord );
+			glVertexAttribPointer( glslProgramDef_t::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), GL_AttributeOffset( offset, idDrawVert::xyzOffset ) );
+			glVertexAttribPointer( glslProgramDef_t::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(idDrawVert), GL_AttributeOffset( offset, idDrawVert::colorOffset ) );
+			glVertexAttribPointer( glslProgramDef_t::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(idDrawVert), GL_AttributeOffset( offset, idDrawVert::texcoordOffset ) );
 
-      glDisableVertexAttribArray(glslProgramDef_t::vertex_attrib_position);
-      glDisableVertexAttribArray(glslProgramDef_t::vertex_attrib_color);
-      glDisableVertexAttribArray(glslProgramDef_t::vertex_attrib_texcoord);
-      GL_UseProgram(nullptr);
+			RB_DrawElementsWithCounters( surf->geometry );
 
-      
-    } else {
-      fhImmediateMode im;
+			glDisableVertexAttribArray( glslProgramDef_t::vertex_attrib_position );
+			glDisableVertexAttribArray( glslProgramDef_t::vertex_attrib_color );
+			glDisableVertexAttribArray( glslProgramDef_t::vertex_attrib_texcoord );
+			GL_UseProgram( nullptr );
+		} else {
+			fhImmediateMode im;
 
-      if (cameraView && nDrawMode == cd_texture) {
-        im.SetTexture(material->GetEditorImage());
-      }
-      
-      im.Begin(GL_TRIANGLES);
-      im.Color3fv(color.ToFloatPtr());
+			if (cameraView && nDrawMode == cd_texture) {
+				im.SetTexture( material->GetEditorImage() );
+			}
 
-      const srfTriangles_t	*tri = surf->geometry;
-      for (int j = 0; j < tri->numIndexes; j += 3) {
-        for (int k = 0; k < 3; k++) {
-          const int		index = tri->indexes[j + k];
-          im.TexCoord2f(tri->verts[index].st.x, tri->verts[index].st.y);
-          im.Vertex3fv(tri->verts[index].xyz.ToFloatPtr());
-        }
-      }     
-      
-      im.End();    
-    }
+			im.Begin( GL_TRIANGLES );
+			im.Color3fv( color.ToFloatPtr() );
+
+			const srfTriangles_t	*tri = surf->geometry;
+			for (int j = 0; j < tri->numIndexes; j += 3) {
+				for (int k = 0; k < 3; k++) {
+					const int		index = tri->indexes[j + k];
+					im.TexCoord2f( tri->verts[index].st.x, tri->verts[index].st.y );
+					im.Vertex3fv( tri->verts[index].xyz.ToFloatPtr() );
+				}
+			}
+
+			im.End();
+		}
 	}
 
-  GL_ModelViewMatrix.Pop();
+	GL_ModelViewMatrix.Pop();
 }
 
 /*
