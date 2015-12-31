@@ -38,8 +38,7 @@ typedef enum {
 } vertBlockTag_t;
 
 typedef struct vertCache_s {
-	GLuint			vbo;
-	bool			indexBuffer;		// holds indexes instead of vertexes
+	GLuint			vbo;	
 
 	int				offset;
 	int				size;				// may be larger than the amount asked for, due
@@ -64,7 +63,7 @@ public:
 	// Alloc does NOT do a touch, which allows purging of things
 	// created at level load time even if a frame hasn't passed yet.
 	// These allocations can be purged, which will zero the pointer.
-	vertCache_t*	Alloc( void *data, int bytes, bool indexBuffer /*= false*/ );
+	vertCache_t*	Alloc( void *data, int bytes );
 
 	// This will be a real pointer with virtual memory,
 	// but it will be an int offset cast to a pointer of ARB_vertex_buffer_object

@@ -114,7 +114,7 @@ const void *idVertexCache::Position( const vertCache_t *buffer ) {
 		common->FatalError( "idVertexCache::Position: bad vertCache_t" );
 	}
 
-  assert(buffer->vbo);
+	assert(buffer->vbo);
 
 	if ( r_showVertexCache.GetInteger() == 2 ) {
 		if ( buffer->tag == TAG_TEMP ) {
@@ -123,13 +123,10 @@ const void *idVertexCache::Position( const vertCache_t *buffer ) {
 			common->Printf( "GL_ARRAY_BUFFER_ARB = %i (%i bytes)\n", buffer->vbo, buffer->size ); 
 		}
 	}
-	if ( buffer->indexBuffer ) {
-		glBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, buffer->vbo );
-	} else {
-		glBindBufferARB( GL_ARRAY_BUFFER_ARB, buffer->vbo );
-	}
 
-  assert(buffer->offset >= 0);
+	glBindBufferARB( GL_ARRAY_BUFFER_ARB, buffer->vbo );
+
+	assert(buffer->offset >= 0);
 	return reinterpret_cast<const void *>(buffer->offset);
 }
 
@@ -162,12 +159,8 @@ int idVertexCache::Bind(const vertCache_t *buffer) {
       common->Printf("GL_ARRAY_BUFFER_ARB = %i (%i bytes)\n", buffer->vbo, buffer->size);
     }
   }
-  if (buffer->indexBuffer) {
-    glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER_ARB, buffer->vbo);
-  }
-  else {
-    glBindBufferARB(GL_ARRAY_BUFFER_ARB, buffer->vbo);
-  }
+
+  glBindBufferARB(GL_ARRAY_BUFFER_ARB, buffer->vbo);
 
   return buffer->offset;
 }
@@ -203,7 +196,7 @@ void idVertexCache::Init() {
 	byte	*junk = (byte *)Mem_Alloc( frameBytes );
 	for ( int i = 0 ; i < NUM_VERTEX_FRAMES ; i++ ) {
 		allocatingTempBuffer = true;	// force the alloc to use GL_STREAM_DRAW_ARB
-		tempBuffers[i] = Alloc( junk, frameBytes, false );
+		tempBuffers[i] = Alloc( junk, frameBytes );
 		allocatingTempBuffer = false;
 		tempBuffers[i]->tag = TAG_FIXED;
 		// unlink these from the static list, so they won't ever get purged
@@ -245,7 +238,7 @@ void idVertexCache::Shutdown() {
 idVertexCache::Alloc
 ===========
 */
-vertCache_t* idVertexCache::Alloc( void *data, int size, bool indexBuffer ) {
+vertCache_t* idVertexCache::Alloc( void *data, int size ) {
 	vertCache_t* buffer = NULL; // if we can't find anything, it will be NULL
 	vertCache_t	*block;
 
@@ -295,22 +288,15 @@ vertCache_t* idVertexCache::Alloc( void *data, int size, bool indexBuffer ) {
 	// referenced by the GPU yet, and can be purged if needed.
 	block->frameUsed = currentFrame - NUM_VERTEX_FRAMES;
 
-	block->indexBuffer = indexBuffer;
-
 	// copy the data
-	assert(block->vbo);
-	
-	if ( indexBuffer ) {
-		glBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, block->vbo );
-		glBufferDataARB( GL_ELEMENT_ARRAY_BUFFER_ARB, (GLsizeiptrARB)size, data, GL_STATIC_DRAW_ARB );
+	assert(block->vbo);	
+
+	glBindBufferARB( GL_ARRAY_BUFFER_ARB, block->vbo );
+	if ( allocatingTempBuffer ) {
+		glBufferDataARB( GL_ARRAY_BUFFER_ARB, (GLsizeiptrARB)size, data, GL_STREAM_DRAW_ARB );
 	} else {
-		glBindBufferARB( GL_ARRAY_BUFFER_ARB, block->vbo );
-		if ( allocatingTempBuffer ) {
-			glBufferDataARB( GL_ARRAY_BUFFER_ARB, (GLsizeiptrARB)size, data, GL_STREAM_DRAW_ARB );
-		} else {
-			glBufferDataARB( GL_ARRAY_BUFFER_ARB, (GLsizeiptrARB)size, data, GL_STATIC_DRAW_ARB );
-		}
-	}	
+		glBufferDataARB( GL_ARRAY_BUFFER_ARB, (GLsizeiptrARB)size, data, GL_STATIC_DRAW_ARB );
+	}
 
 	return buffer;
 }
@@ -394,7 +380,7 @@ vertCache_t	*idVertexCache::AllocFrameTemp( void *data, int size ) {
 		// if we don't have enough room in the temp block, allocate a static block,
 		// but immediately free it so it will get freed at the next frame
 		tempOverflow = true;
-		block = Alloc( data, size, false );
+		block = Alloc( data, size );
 		Free( block);
 		return block;
 	}
@@ -424,7 +410,6 @@ vertCache_t	*idVertexCache::AllocFrameTemp( void *data, int size ) {
 
 	block->size = size;
 	block->tag = TAG_TEMP;
-	block->indexBuffer = false;
 	block->offset = dynamicAllocThisFrame;
 	dynamicAllocThisFrame += block->size;
 	dynamicCountThisFrame++;

@@ -64,7 +64,7 @@ bool R_CreateAmbientCache( srfTriangles_t *tri, bool needsLighting ) {
 		return false;
 	}
 
-	tri->ambientCache = vertexCache.Alloc( tri->verts, tri->numVerts * sizeof( tri->verts[0] ), false );
+	tri->ambientCache = vertexCache.Alloc( tri->verts, tri->numVerts * sizeof( tri->verts[0] ) );
 	if ( !tri->ambientCache ) {	
 		return false;
 	}
@@ -83,7 +83,7 @@ void R_CreatePrivateShadowCache( srfTriangles_t *tri ) {
 		return;
 	}
 
-	tri->shadowCache = vertexCache.Alloc( tri->shadowVertexes, tri->numVerts * sizeof( *tri->shadowVertexes ), false );
+	tri->shadowCache = vertexCache.Alloc( tri->shadowVertexes, tri->numVerts * sizeof( *tri->shadowVertexes ) );
 }
 
 /*
@@ -123,7 +123,7 @@ void R_CreateVertexProgramShadowCache( srfTriangles_t *tri ) {
 
 #endif
 
-	tri->shadowCache = vertexCache.Alloc( temp, tri->numVerts * 2 * sizeof( shadowCache_t ), false );
+	tri->shadowCache = vertexCache.Alloc( temp, tri->numVerts * 2 * sizeof( shadowCache_t ) );
 }
 
 /*
