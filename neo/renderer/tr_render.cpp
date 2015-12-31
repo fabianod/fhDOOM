@@ -31,13 +31,21 @@ If you have questions concerning this license or the applicable additional terms
 
 #include "tr_local.h"
 #include "ImmediateMode.h"
-
+#include "IndexCache.h"
 /*
 
   back end scene + lights rendering functions
 
 */
 
+
+static const void* RB_Indices(const srfTriangles_t* tri) {
+	if(tri->indexCache && r_useIndexBuffers.GetBool()) {
+		return reinterpret_cast<const void*>(tri->indexCache->offset);
+	}
+
+	return tri->indexes;
+}
 
 /*
 =================
@@ -96,7 +104,7 @@ void RB_DrawElementsWithCounters( const srfTriangles_t *tri ) {
 	glDrawElements( GL_TRIANGLES, 
 					r_singleTriangle.GetBool() ? 3 : tri->numIndexes,
 					GL_INDEX_TYPE,
-					tri->indexes );
+					RB_Indices(tri) );
 }
 
 /*
@@ -114,7 +122,7 @@ void RB_DrawShadowElementsWithCounters( const srfTriangles_t *tri, int numIndexe
 	glDrawElements( GL_TRIANGLES, 
 					r_singleTriangle.GetBool() ? 3 : numIndexes,
 					GL_INDEX_TYPE,
-					tri->indexes );
+					RB_Indices(tri) );
 }
 
 

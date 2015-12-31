@@ -326,8 +326,8 @@ static void RB_RenderShadowCasters(const viewLight_t *vLight, const float* shado
 				}
 			}
 
-			if (r_ignore2.GetBool() && !tri->ambientIndexCache) {
-				tri->ambientIndexCache = indexCache.Alloc( tri->indexes, tri->numIndexes * sizeof(tri->indexes[0]) );
+			if (r_useIndexBuffers.GetBool() && !tri->indexCache) {
+				tri->indexCache = indexCache.Alloc( tri->indexes, tri->numIndexes * sizeof(tri->indexes[0]) );
 			}
 
 			const auto offset = vertexCache.Bind( tri->ambientCache );			
@@ -336,16 +336,13 @@ static void RB_RenderShadowCasters(const viewLight_t *vLight, const float* shado
 			glUniformMatrix4fv(glslProgramDef_t::uniform_modelViewMatrix, 1, false, shadowViewMatrix);
 			glUniform1i(glslProgramDef_t::uniform_alphaTestEnabled, 0);
 
-			if(r_ignore2.GetBool()) {
-				indexCache.Bind(tri->ambientIndexCache);
-				glDrawElements( GL_TRIANGLES,
-					tri->numIndexes,
-					GL_INDEX_TYPE,
-					(void*)tri->ambientIndexCache->offset);
-				indexCache.Unbind();
-			} else 	{
-				RB_DrawElementsWithCounters( tri );
-			}
+			if(r_useIndexBuffers.GetBool()) {
+				indexCache.Bind(tri->indexCache);
+			} 
+
+			RB_DrawElementsWithCounters( tri );			
+
+			indexCache.Unbind();
 
 			backEnd.pc.c_shadowMapDraws++;
 			staticOccluderModelWasRendered = true;

@@ -1,23 +1,25 @@
 #pragma once
 
-typedef struct indexBuffer_s {
+struct indexCache_t;
+
+struct indexBuffer_t {
 	GLuint name;
 	int size;
-	struct indexBuffer_s* next;
-	struct indexCache_s* first;
-} indexBuffer_t;
+	indexBuffer_t* next;
+	indexCache_t* first;
+};
 
-typedef struct indexCache_s {
+struct indexCache_t {
 	indexBuffer_t* buffer;
 	int offset;
 	int size;
 	bool used;
 
-	struct indexCache_s* nextFree;
-	struct indexCache_s* prevFree;
-	struct indexCache_s* nextInBuffer;
-	struct indexCache_s* prevInBuffer;
-} indexCache_t;
+	indexCache_t* nextFree;
+	indexCache_t* prevFree;
+	indexCache_t* nextInBuffer;
+	indexCache_t* prevInBuffer;
+};
 
 class fhIndexCache {
 public:

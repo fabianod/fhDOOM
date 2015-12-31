@@ -58,6 +58,7 @@ typedef short glIndex_t;
 
 #endif
 
+struct indexCache_t;
 
 typedef struct {
 	// NOTE: making this a glIndex is dubious, as there can be 2x the faces as verts
@@ -132,12 +133,10 @@ typedef struct srfTriangles_s {
 	struct srfTriangles_s *		ambientSurface;			// for light interactions, point back at the original surface that generated
 														// the interaction, which we will get the ambientCache from
 
-	struct srfTriangles_s *		nextDeferredFree;		// chain of tris to free next frame
-
-	const struct indexCache_s *	ambientIndexCache;
+	struct srfTriangles_s *		nextDeferredFree;		// chain of tris to free next frame	
 
 	// data in vertex object space, not directly readable by the CPU
-	struct vertCache_s *		indexCache;				// int
+	const indexCache_t *		indexCache;
 	struct vertCache_s *		ambientCache;			// idDrawVert
 	struct vertCache_s *		shadowCache;			// shadowCache_t
 } srfTriangles_t;

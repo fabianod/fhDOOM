@@ -347,12 +347,8 @@ void R_FreeStaticTriSurfVertexCaches( srfTriangles_t *tri ) {
 		vertexCache.Free( tri->ambientCache );
 		tri->ambientCache = NULL;
 	} 
-	if (tri->ambientIndexCache) {
-		indexCache.Free( tri->ambientIndexCache );
-		tri->ambientIndexCache = NULL;
-	}
-	if ( tri->indexCache ) {
-		vertexCache.Free( tri->indexCache );
+	if (tri->indexCache) {
+		indexCache.Free( tri->indexCache );
 		tri->indexCache = NULL;
 	}
 	if ( tri->shadowCache && ( tri->shadowVertexes != NULL || tri->verts != NULL ) ) {
