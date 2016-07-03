@@ -597,7 +597,7 @@ CSG_Merge
 void CSG_Merge(void)
 {
 	brush_t *b, *next, *newlist, *newbrush;
-	struct entity_s	*owner;
+	entity_t	*owner;
 
 	Sys_Status("Merging...\n");
 

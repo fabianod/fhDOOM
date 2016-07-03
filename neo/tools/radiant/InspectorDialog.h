@@ -61,7 +61,7 @@ public:
 	CDialogTextures mediaDlg;
 	CEntityDlg entityDlg;
 	void SetMode(int mode, bool updateTabs = true);
-	void UpdateEntitySel(eclass_t *ent);
+	void UpdateEntitySel(const eclass_t* ent);
 	void UpdateSelectedEntity();
 	void FillClassList();
 	bool GetSelectAllCriteria(idStr &key, idStr &val);

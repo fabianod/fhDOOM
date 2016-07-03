@@ -14701,7 +14701,7 @@ windowDef MultiplayerLANParent {
 				forecolor	0.6, 0.8, 0.8, 1
 			}
 		}
-	//Enable Specular
+	//SHADOW QUALITY
 		windowDef ADV3 {
 			rect		20, 90, 400, 16
 			windowDef ADV3L {
@@ -14724,7 +14724,7 @@ windowDef MultiplayerLANParent {
 			}
 			windowDef ADV3Title {
 				rect		1, 1, 280, 14
-				text		"#str_04124"
+				text		"Soft Shadows Quality"
 				font		"fonts/bank"
 				textscale	0.25
 				textalign	2
@@ -14733,8 +14733,8 @@ windowDef MultiplayerLANParent {
 			}
 			choiceDef ADV3Primary {
 				rect		320, 1, 50, 14
-				choices		"#str_04230"
-				cvar		"r_skipSpecular"
+				choices		"High;Medium;Low"
+				cvar		"r_smLodBias"
 				choiceType	0
 				font		"fonts/bank"
 				textscale	0.25
@@ -14742,10 +14742,10 @@ windowDef MultiplayerLANParent {
 				textaligny	-6
 				forecolor	0.6, 0.8, 0.8, 1
 			}
-		}
-	//Enable Bump Maps
+		}	
+	//SOFT PARTICLES
 		windowDef ADV4 {
-			rect		20, 116, 700, 16
+			rect		20, 116, 400, 16
 			windowDef ADV4L {
 				rect		0, 0, 8, 16
 				background	"gui/mainmenu/select_edge"
@@ -14766,7 +14766,7 @@ windowDef MultiplayerLANParent {
 			}
 			windowDef ADV4Title {
 				rect		1, 1, 280, 14
-				text		"#str_04125"
+				text		"Soft Particles"
 				font		"fonts/bank"
 				textscale	0.25
 				textalign	2
@@ -14775,8 +14775,8 @@ windowDef MultiplayerLANParent {
 			}
 			choiceDef ADV4Primary {
 				rect		320, 1, 50, 14
-				choices		"#str_04230"
-				cvar		"r_skipBump"
+				choices		"Off;On"
+				cvar		"r_softParticles"
 				choiceType	0
 				font		"fonts/bank"
 				textscale	0.25
@@ -14784,7 +14784,8 @@ windowDef MultiplayerLANParent {
 				textaligny	-6
 				forecolor	0.6, 0.8, 0.8, 1
 			}
-		}
+		}	
+
 	//Video Sync
 		windowDef ADV5 {
 			rect		20, 142, 400, 16

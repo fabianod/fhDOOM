@@ -36,6 +36,7 @@ If you have questions concerning this license or the applicable additional terms
 #include "splines.h"
 #include "../../renderer/tr_local.h"
 #include "../../renderer/ImmediateMode.h"
+#include "../../renderer/RenderList.h"
 #include "../../renderer/model_local.h"	// for idRenderModelLiquid
 
 
@@ -424,10 +425,12 @@ bool UpdateActiveDragPoint(const idVec3 &move) {
 		idMat3 invmat = mat.Transpose();
 		idVec3	target, up, right, start, end;
 		CString str;
+		entity_t* owner = activeDrag->pBrush->owner;
+		assert(owner);
 		if (activeDrag->nType == LIGHT_TARGET) {
-			GetVectorForKey(activeDrag->pBrush->owner, "light_target", target);
-			GetVectorForKey(activeDrag->pBrush->owner, "light_up", up);
-			GetVectorForKey(activeDrag->pBrush->owner, "light_right", right);
+			owner->GetVectorForKey("light_target", target);
+			owner->GetVectorForKey("light_up", up);
+			owner->GetVectorForKey("light_right", right);
 			target *= mat;
 			up *= mat;
 			right *= mat;
@@ -435,9 +438,9 @@ bool UpdateActiveDragPoint(const idVec3 &move) {
 			target *= invmat;
 			up *= invmat;
 			right *= invmat;
-			SetKeyVec3(activeDrag->pBrush->owner, "light_target", target);
-			SetKeyVec3(activeDrag->pBrush->owner, "light_up", up);
-			SetKeyVec3(activeDrag->pBrush->owner, "light_right", right);
+			owner->SetKeyVec3("light_target", target);
+			owner->SetKeyVec3("light_up", up);
+			owner->SetKeyVec3("light_right", right);
 			target += (activeDrag->pBrush->trackLightOrigin) ? activeDrag->pBrush->owner->lightOrigin : activeDrag->pBrush->owner->origin;
 			UpdateSelectablePoint(activeDrag->pBrush, Brush_TransformedPoint(activeDrag->pBrush, target), LIGHT_TARGET);
 			up += target;
@@ -446,51 +449,51 @@ bool UpdateActiveDragPoint(const idVec3 &move) {
 			UpdateSelectablePoint(activeDrag->pBrush, Brush_TransformedPoint(activeDrag->pBrush,right), LIGHT_RIGHT);
 		}
 		else if (activeDrag->nType == LIGHT_UP) {
-			GetVectorForKey(activeDrag->pBrush->owner, "light_up", up);
+			owner->GetVectorForKey("light_up", up);
 			up *= mat;
 			up += move;
 			up *= invmat;
-			SetKeyVec3(activeDrag->pBrush->owner, "light_up", up);
-			GetVectorForKey(activeDrag->pBrush->owner, "light_target", target);
+			owner->SetKeyVec3("light_up", up);
+			owner->GetVectorForKey("light_target", target);
 			target += (activeDrag->pBrush->trackLightOrigin) ? activeDrag->pBrush->owner->lightOrigin : activeDrag->pBrush->owner->origin;
 			up += target;
 			UpdateSelectablePoint(activeDrag->pBrush, Brush_TransformedPoint(activeDrag->pBrush,up), LIGHT_UP);
 		}
 		else if (activeDrag->nType == LIGHT_RIGHT) {
-			GetVectorForKey(activeDrag->pBrush->owner, "light_right", right);
+			owner->GetVectorForKey("light_right", right);
 			right *= mat;
 			right += move;
 			right *= invmat;
-			SetKeyVec3(activeDrag->pBrush->owner, "light_right", right);
-			GetVectorForKey(activeDrag->pBrush->owner, "light_target", target);
+			owner->SetKeyVec3("light_right", right);
+			owner->GetVectorForKey("light_target", target);
 			target += (activeDrag->pBrush->trackLightOrigin) ? activeDrag->pBrush->owner->lightOrigin : activeDrag->pBrush->owner->origin;
 			right += target;
 			UpdateSelectablePoint(activeDrag->pBrush, Brush_TransformedPoint(activeDrag->pBrush,right), LIGHT_RIGHT);
 		}
 		else if (activeDrag->nType == LIGHT_START) {
-			GetVectorForKey(activeDrag->pBrush->owner, "light_start", start);
+			owner->GetVectorForKey("light_start", start);
 			start *= mat;
 			start += move;
 			start *= invmat;
-			SetKeyVec3(activeDrag->pBrush->owner, "light_start", start);
+			owner->SetKeyVec3("light_start", start);
 			start += (activeDrag->pBrush->trackLightOrigin) ? activeDrag->pBrush->owner->lightOrigin : activeDrag->pBrush->owner->origin;
 			UpdateSelectablePoint(activeDrag->pBrush, Brush_TransformedPoint(activeDrag->pBrush,start), LIGHT_START);
 		}
 		else if (activeDrag->nType == LIGHT_END) {
-			GetVectorForKey(activeDrag->pBrush->owner, "light_end", end);
+			owner->GetVectorForKey("light_end", end);
 			end *= mat;
 			end += move;
 			end *= invmat;
-			SetKeyVec3(activeDrag->pBrush->owner, "light_end", end);
+			owner->SetKeyVec3("light_end", end);
 			end += (activeDrag->pBrush->trackLightOrigin) ? activeDrag->pBrush->owner->lightOrigin : activeDrag->pBrush->owner->origin;
 			UpdateSelectablePoint(activeDrag->pBrush, Brush_TransformedPoint(activeDrag->pBrush,end), LIGHT_END);
 		}
 		else if (activeDrag->nType == LIGHT_CENTER) {
-			GetVectorForKey(activeDrag->pBrush->owner, "light_center", end);
+			owner->GetVectorForKey("light_center", end);
 			end *= mat;
 			end += move;
 			end *= invmat;
-			SetKeyVec3(activeDrag->pBrush->owner, "light_center", end);
+			owner->SetKeyVec3("light_center", end);
 			end += (activeDrag->pBrush->trackLightOrigin) ? activeDrag->pBrush->owner->lightOrigin : activeDrag->pBrush->owner->origin;
 			UpdateSelectablePoint(activeDrag->pBrush, Brush_TransformedPoint(activeDrag->pBrush, end), LIGHT_CENTER);
 		}
@@ -1366,15 +1369,15 @@ void CXYWnd::OnPaint() {
 		QE_CheckOpenGLForErrors();
 
 		if (m_nViewType != XY) {
-      GL_ModelViewMatrix.Push();
+			GL_ModelViewMatrix.Push();
 			if (m_nViewType == YZ) {
-        GL_ModelViewMatrix.Rotate(-90, 0, 1, 0);
+				GL_ModelViewMatrix.Rotate(-90, 0, 1, 0);
 			}
 
 			GL_ModelViewMatrix.Rotate(-90, 1, 0, 0);		// put Z going up
 		}
 
-    fhImmediateMode im;
+		fhImmediateMode im;
 		if ( g_bCrossHairs ) {
 			im.Color4f( 0.2f, 0.9f, 0.2f, 0.8f );
 			im.Begin(GL_LINES);
@@ -1401,7 +1404,7 @@ void CXYWnd::OnPaint() {
 		}
 
 		if (ClipMode()) {
-      const idVec3 clipColor = g_qeglobals.d_savedinfo.colors[COLOR_CLIPPER];
+			const idVec3 clipColor = g_qeglobals.d_savedinfo.colors[COLOR_CLIPPER];
 
 			glPointSize(4);
 			im.Color3fv(clipColor.ToFloatPtr());
@@ -1419,16 +1422,19 @@ void CXYWnd::OnPaint() {
 			im.End();
 			glPointSize(1);
 
-      const idVec3 clipNumOffset(2,2,2);
+			const idVec3 clipNumOffset(2,2,2);
 
-      if (g_Clip1.Set())
-        drawText("1", 1.0/m_fScale, g_Clip1.m_ptClip + clipNumOffset, clipColor); 
+			if (g_Clip1.Set()) {
+				drawText("1", 1.0/m_fScale, g_Clip1.m_ptClip + clipNumOffset, clipColor); 
+			}
 
-      if (g_Clip2.Set())
-        drawText("2", 1.0/m_fScale, g_Clip2.m_ptClip + clipNumOffset, clipColor); 
+			if (g_Clip2.Set()) {
+				drawText("2", 1.0/m_fScale, g_Clip2.m_ptClip + clipNumOffset, clipColor); 
+			}
 
-      if (g_Clip3.Set())
-        drawText("3", 1.0/m_fScale, g_Clip3.m_ptClip + clipNumOffset, clipColor); 
+			if (g_Clip3.Set()) {
+				drawText("3", 1.0/m_fScale, g_Clip3.m_ptClip + clipNumOffset, clipColor); 
+			}
 
 			if (g_Clip1.Set() && g_Clip2.Set() && selected_brushes.next != &selected_brushes) {
 				ProduceSplitLists();
@@ -1459,13 +1465,14 @@ void CXYWnd::OnPaint() {
 		}
 
 		if (m_nViewType != XY) {
-      GL_ModelViewMatrix.Pop();
+			GL_ModelViewMatrix.Pop();
 		}
-
-    //common->Printf("XYWnd: count=%d, data=%d\n", fhImmediateMode::DrawCallCount(), fhImmediateMode::DrawCallVertexSize());
-    
+#ifdef _DEBUG
+		common->Printf("XYWnd: count=%d, data=%d\n", fhImmediateMode::DrawCallCount(), fhImmediateMode::DrawCallVertexSize());
+#endif    
 		wglSwapBuffers(dc.m_hDC);
-    vertexCache.EndFrame();
+		vertexCache.EndFrame();
+		fhBaseRenderList::EndFrame();
 		TRACE("XY Paint\n");
 	}
 }
@@ -1486,7 +1493,7 @@ void CXYWnd::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags) {
 void CreateEntityFromName(char *pName, brush_t *pBrush, bool forceFixed, idVec3 min, idVec3 max, idVec3 org) {
 	eclass_t	*pecNew;
 	entity_t	*petNew;
-	if (stricmp(pName, "worldspawn") == 0) {
+	if (stricmp(pName, "orldspawn") == 0) {
 		g_pParentWnd->MessageBox("Can't create an entity with worldspawn.", "info", 0);
 		return;
 	}
@@ -1504,8 +1511,8 @@ void CreateEntityFromName(char *pName, brush_t *pBrush, bool forceFixed, idVec3 
 		idVec3	rad = max - min;
 		rad *= 0.5;
 		if (rad.x != 0 && rad.y != 0 && rad.z != 0) {
-			SetKeyValue(petNew, "light_radius", va("%g %g %g", idMath::Fabs(rad.x), idMath::Fabs(rad.y), idMath::Fabs(rad.z)));
-			DeleteKey(petNew, "light");
+			petNew->SetKeyValue("light_radius", va("%g %g %g", idMath::Fabs(rad.x), idMath::Fabs(rad.y), idMath::Fabs(rad.z)));
+			petNew->DeleteKey("light");
 		}
 	}
 
@@ -1526,7 +1533,7 @@ void CreateEntityFromName(char *pName, brush_t *pBrush, bool forceFixed, idVec3 
 				brush_t *nb = Brush_Create(mins, maxs, &pecNew->texdef);
 				Entity_LinkBrush(b->owner, nb);
 				nb->owner->eclass = pecNew;
-				SetKeyValue(nb->owner, "classname", pName);
+				nb->owner->SetKeyValue("classname", pName);
 				Brush_Free(b);
 				Brush_Build(nb);
 				Brush_AddToList(nb, &active_brushes);
@@ -2557,7 +2564,9 @@ void CXYWnd::XY_DrawGrid() {
 			if (g_pParentWnd->GetZWnd()->m_pZClip->IsEnabled())
 			{
 				im.Color3f(ZCLIP_COLOUR);
-				glLineWidth(2);
+
+				//TODO(johl): linewidth>1 is deprecated. WTF?
+				glLineWidth( 1 /*2*/ );
 				im.Begin (GL_LINES);
 
 				im.Vertex2f (xb, g_pParentWnd->GetZWnd()->m_pZClip->GetTop());
@@ -2789,7 +2798,7 @@ void CXYWnd::DrawZIcon(void) {
 		glDisable(GL_CULL_FACE);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    fhImmediateMode im;
+		fhImmediateMode im;
 		im.Color4f(0.0, 0.0, 1.0, 0.25);
 		im.Begin(GL_QUADS);
 		im.Vertex3f(x - 8, y - 8, 0);
@@ -2981,9 +2990,9 @@ void DrawPathLines(void) {
 	for (const entity_t* te = entities.next; te != &entities && num_entities != MAX_MAP_ENTITIES; te = te->next) {
 		for (int i = 0; i < 2048; i++) {
 			if (i == 0) {
-				ent_target[num_entities] = ValueForKey(te, "target");
+				ent_target[num_entities] = te->ValueForKey("target");
 			} else {
-				ent_target[num_entities] = ValueForKey(te, va("target%i", i));
+				ent_target[num_entities] = te->ValueForKey(va("target%i", i));
 			}
 			if (ent_target[num_entities][0]) {
 				ent_entity[num_entities] = te;
@@ -2995,7 +3004,7 @@ void DrawPathLines(void) {
 	}
 
 	for (entity_t* se = entities.next; se != &entities; se = se->next) {
-		const char* psz = ValueForKey(se, "name");
+		const char* psz = se->ValueForKey("name");
 
 		if (psz == NULL || psz[0] == '\0') {
 			continue;
@@ -3781,7 +3790,7 @@ void CleanCopyEntities() {
 		entity_t	*next = pe->next;
 		pe->epairs.Clear();
 
-		Entity_Free(pe);
+		delete pe;
 		pe = next;
 	}
 
@@ -3793,9 +3802,7 @@ void CleanCopyEntities() {
  =======================================================================================================================
  */
 entity_t *Entity_CopyClone(entity_t *e) {
-	entity_t	*n;
-
-	n = Entity_New();
+	entity_t* n = new entity_t();
 	n->brushes.onext = n->brushes.oprev = &n->brushes;
 	n->eclass = e->eclass;
 	n->rotation = e->rotation;

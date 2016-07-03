@@ -78,7 +78,7 @@ public:
 	virtual BOOL OnInitDialog();
 	virtual int OnToolHitTest(CPoint point, TOOLINFO* pTI) const;
 	void AddClassNames();
-	void UpdateEntitySel(eclass_t *ent);
+	void UpdateEntitySel(const eclass_t* ent);
 	void SetKeyValPairs( bool updateAnims = true );
 	static const char *TranslateString(const char *p);
 	void AddProp();

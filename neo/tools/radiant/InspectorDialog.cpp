@@ -100,7 +100,7 @@ void CInspectorDialog::SetMode(int mode, bool updateTabs) {
 	FocusWindow ( mode );
 }
 
-void CInspectorDialog::UpdateEntitySel(eclass_t *ent) {
+void CInspectorDialog::UpdateEntitySel(const eclass_t* ent) {
 	entityDlg.UpdateEntitySel(ent);
 }
 

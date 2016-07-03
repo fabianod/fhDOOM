@@ -51,7 +51,9 @@ double Sys_GetClockTicks( void ) {
 	LARGE_INTEGER li;
 
 	QueryPerformanceCounter( &li );
-	return = (double ) li.LowPart + (double) 0xFFFFFFFF * li.HighPart;
+
+	return static_cast<double>(li.QuadPart);
+	//return (double ) li.LowPart + (double) 0xFFFFFFFF * li.HighPart;
 
 #else
 

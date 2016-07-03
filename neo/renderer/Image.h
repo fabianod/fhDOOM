@@ -55,6 +55,8 @@ glDisable( GL_TEXTURE_* )
 ====================================================================
 */
 
+#pragma once
+
 typedef enum {
 	IS_UNLOADED,	// no gl texture number
 	IS_PARTIAL,		// has a texture number and the low mip levels loaded
@@ -130,9 +132,7 @@ typedef enum {
 typedef enum {
 	TT_DISABLED,
 	TT_2D,
-	TT_3D,
-	TT_CUBIC,
-	TT_RECT
+	TT_CUBIC
 } textureType_t;
 
 typedef enum {
@@ -144,6 +144,7 @@ typedef enum {
 #define	MAX_IMAGE_NAME	256
 
 class fhFramebuffer;
+class fhSampler;
 
 class idImage {
 public:
@@ -153,7 +154,7 @@ public:
 	// automatically enables or disables cube mapping or texture3D
 	// May perform file loading if the image was not preloaded.
 	// May start a background image read.
-	void		Bind();
+	void		Bind(int textureUnit);
 
 	// deletes the texture object, but leaves the structure so it can be reloaded
 	void		PurgeImage();
@@ -165,21 +166,17 @@ public:
 	void		GenerateImage( const byte *pic, int width, int height, 
 					   textureFilter_t filter, bool allowDownSize, 
 					   textureRepeat_t repeat, textureDepth_t depth );
-	void		Generate3DImage( const byte *pic, int width, int height, int depth,
-						textureFilter_t filter, bool allowDownSize, 
-						textureRepeat_t repeat, textureDepth_t minDepth );
 	void		GenerateCubeImage( const byte *pic[6], int size, 
 						textureFilter_t filter, bool allowDownSize, 
 						textureDepth_t depth );
 
 	void		CopyFramebuffer( int x, int y, int width, int height, bool useOversizedBuffer );
-
 	void		CopyDepthbuffer( int x, int y, int width, int height );
 
-  void    AttachColorToFramebuffer(fhFramebuffer* framebuffer);
-  void    AttachDepthToFramebuffer(fhFramebuffer* framebuffer);
+	void		AttachColorToFramebuffer(fhFramebuffer* framebuffer);
+	void		AttachDepthToFramebuffer(fhFramebuffer* framebuffer);
 
-	void		UploadScratch( const byte *pic, int width, int height );
+	void		UploadScratch( int textureUnit, const byte *pic, int width, int height );
 
 	// just for resource tracking
 	void		SetClassification( int tag );
@@ -199,7 +196,7 @@ public:
 
 	void		GetDownsize( int &scaled_width, int &scaled_height ) const;
 	void		MakeDefault();	// fill with a grid pattern
-	void		SetImageFilterAndRepeat() const;
+	void		SetImageFilterAndRepeat();
 	bool		ShouldImageBePartialCached();
 	void		WritePrecompressedImage();
 	bool		CheckPrecompressedImage( bool fullLoad );
@@ -215,6 +212,7 @@ public:
 
 	// data commonly accessed is grouped here
 	static const int TEXTURE_NOT_LOADED = -1;
+	fhSampler*          sampler;
 	GLuint				texnum;					// gl texture binding, will be TEXTURE_NOT_LOADED if not loaded
 	textureType_t		type;
 	int					frameUsed;				// for texture usage in frame statistics
@@ -261,6 +259,7 @@ public:
 
 ID_INLINE idImage::idImage() {
 	texnum = TEXTURE_NOT_LOADED;
+	sampler = nullptr;
 	partialImage = NULL;
 	type = TT_DISABLED;
 	isPartialImage = false;
@@ -403,7 +402,7 @@ public:
 	void				ReloadAllImages();
 
 	// disable the active texture unit
-	void				BindNull();
+	void				BindNull(int textureUnit = -1);
 
 	// Mark all file based images as currently unused,
 	// but don't free anything.  Calls to ImageFromFile() will
@@ -464,7 +463,6 @@ public:
 	idImage *			alphaNotchImage;			// 2x1 texture with just 1110 and 1111 with point sampling
 	idImage *			whiteImage;					// full of 0xff
 	idImage *			blackImage;					// full of 0x00
-	idImage *			normalCubeMapImage;			// cube map to normalize STR into RGB
 	idImage *			noFalloffImage;				// all 255, but zero clamped
 	idImage *			fogImage;					// increasing alpha is denser fog
 	idImage *			fogEnterImage;				// adjust fogImage alpha based on terminator plane
@@ -474,20 +472,13 @@ public:
 	idImage *			accumImage;
 	idImage *			currentRenderImage;			// for SS_POST_PROCESS shaders
 	idImage *			currentDepthImage;
-	idImage *			scratchCubeMapImage;
-	idImage *			specularTableImage;			// 1D intensity texture with our specular function
-	idImage *			specular2DTableImage;		// 2D intensity texture with our specular function with variable specularity
 	idImage *			borderClampImage;			// white inside, black outside
+	idImage *           jitterImage;
 
 	fhFramebuffer*		defaultFramebuffer;
-	static const int    shadowMapLodNum = 3;
-private:	
-	idImage *			shadowmapImage[shadowMapLodNum][6];
-	fhFramebuffer*		shadowmapFramebuffer[shadowMapLodNum][6];	
-public:
 
-	fhFramebuffer*      GetShadowMapFramebuffer(int side, int lod);
-	idImage*            GetShadowMapImage(int side, int lod); 
+	idImage *			shadowmapImage;
+	fhFramebuffer*		shadowmapFramebuffer;
 
 	//--------------------------------------------------------
 	
@@ -519,18 +510,6 @@ public:
 	int	numActiveBackgroundImageLoads;
 	const static int MAX_BACKGROUND_IMAGE_LOADS = 8;
 };
-
-inline fhFramebuffer* idImageManager::GetShadowMapFramebuffer( int side, int lod ) {
-	assert(side >= 0 && side < 6);
-	assert(lod >= 0 && lod < shadowMapLodNum);	
-	return shadowmapFramebuffer[lod][side];
-}
-
-inline idImage* idImageManager::GetShadowMapImage( int side, int lod ) {
-	assert( side >= 0 && side < 6 );
-	assert(lod >= 0 && lod < shadowMapLodNum);
-	return shadowmapImage[lod][side];
-}
 
 extern idImageManager	*globalImages;		// pointer to global list for the rest of the system
 

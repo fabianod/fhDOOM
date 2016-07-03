@@ -124,6 +124,49 @@ static int ClassifyImage( const char *name ) {
 
 /*
 ================
+R_JitterImage
+
+Creates a jitter image where each pixel is a random 2D rotation.
+The red channel contains cosine and the green channel sine of
+a rotation, so it's easy to build a 2D rotation matrix from it.
+
+cosine and sine are compressed from [-1, 1] range to [0, 255] range
+to fit into simple RGB(A) textures.
+
+Blue and alpha channel are not used yet. Could be used to store a second rotation
+or to increase precision?
+
+TODO(johl): using floating point RG texture format provides a lot more precision
+            and we don't need to compress the range.
+================
+*/
+static void R_JitterImage( idImage *image ) {
+
+	static const int jitterSize = 1024;
+
+	byte* data = new byte[jitterSize * jitterSize * 4];
+
+	idRandom random( 13 );
+
+	for (int x = 0; x < jitterSize * jitterSize * 4; x += 4) {
+		float rad = DEG2RAD( random.RandomInt( 359 ) );
+		float sine = idMath::Sin( rad );
+		float cosine = idMath::Cos( rad );
+
+		data[x + 0] = static_cast<byte>((cosine + 1) * 128);
+		data[x + 1] = static_cast<byte>((sine + 1) * 128);
+		data[x + 2] = 255;
+		data[x + 3] = 255;		
+	}
+
+	image->GenerateImage( data, jitterSize, jitterSize,
+		TF_NEAREST, false, TR_REPEAT, TD_HIGH_QUALITY );
+
+	delete[] data;
+}
+
+/*
+================
 R_RampImage
 
 Creates a 0-255 ramp image
@@ -146,78 +189,6 @@ static void R_RampImage( idImage *image ) {
 
 /*
 ================
-R_SpecularTableImage
-
-Creates a ramp that matches our fudged specular calculation
-================
-*/
-static void R_SpecularTableImage( idImage *image ) {
-	int		x;
-	byte	data[256][4];
-
-	for (x=0 ; x<256 ; x++) {
-		float f = x/255.f;
-#if 0
-		f = pow(f, 16);
-#else
-		// this is the behavior of the hacked up fragment programs that
-		// can't really do a power function
-		f = (f-0.75)*4;
-		if ( f < 0 ) {
-			f = 0;
-		}
-		f = f * f;
-#endif
-		int		b = (int)(f * 255);
-
-		data[x][0] = 
-		data[x][1] = 
-		data[x][2] = 
-		data[x][3] = b;
-	}
-
-	image->GenerateImage( (byte *)data, 256, 1, 
-		TF_LINEAR, false, TR_CLAMP, TD_HIGH_QUALITY );
-}
-
-
-/*
-================
-R_Specular2DTableImage
-
-Create a 2D table that calculates ( reflection dot , specularity )
-================
-*/
-static void R_Specular2DTableImage( idImage *image ) {
-	int		x, y;
-	byte	data[256][256][4];
-
-	memset( data, 0, sizeof( data ) );
-		for ( x = 0 ; x < 256 ; x++ ) {
-			float f = x / 255.0f;
-		for ( y = 0; y < 256; y++ ) {
-
-			int b = (int)( pow( f, y ) * 255.0f );
-			if ( b == 0 ) {
-				// as soon as b equals zero all remaining values in this column are going to be zero
-				// we early out to avoid pow() underflows
-				break;
-			}
-
-			data[y][x][0] = 
-			data[y][x][1] = 
-			data[y][x][2] = 
-			data[y][x][3] = b;
-		}
-	}
-
-	image->GenerateImage( (byte *)data, 256, 256, TF_LINEAR, false, TR_CLAMP, TD_HIGH_QUALITY );
-}
-
-
-
-/*
-================
 R_AlphaRampImage
 
 Creates a 0-255 ramp image
@@ -237,8 +208,6 @@ static void R_AlphaRampImage( idImage *image ) {
 	image->GenerateImage( (byte *)data, 256, 1, 
 		TF_NEAREST, false, TR_CLAMP, TD_HIGH_QUALITY );
 }
-
-
 
 /*
 ==================
@@ -366,7 +335,7 @@ static void R_BorderClampImage( idImage *image ) {
 	// explicit zero border
 	float	color[4];
 	color[0] = color[1] = color[2] = color[3] = 0;
-	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, color );
+	//glSamplerParameterfv(image->samplernum, GL_TEXTURE_BORDER_COLOR, color );	
 }
 
 static void R_RGBA8Image( idImage *image ) {
@@ -639,43 +608,6 @@ static void getCubeVector(int i, int cubesize, int x, int y, float *vector) {
   vector[1] *= mag;
   vector[2] *= mag;
 }
-
-/* Initialize a cube map texture object that generates RGB values
- * that when expanded to a [-1,1] range in the register combiners
- * form a normalized vector matching the per-pixel vector used to
- * access the cube map.
- */
-static void makeNormalizeVectorCubeMap( idImage *image ) {
-	float vector[3];
-	int i, x, y;
-	byte	*pixels[6];
-	int		size;
-
-	size = NORMAL_MAP_SIZE;
-
-	pixels[0] = (GLubyte*) Mem_Alloc(size*size*4*6);
-
-	for (i = 0; i < 6; i++) {
-		pixels[i] = pixels[0] + i*size*size*4;
-		for (y = 0; y < size; y++) {
-		  for (x = 0; x < size; x++) {
-			getCubeVector(i, size, x, y, vector);
-			pixels[i][4*(y*size+x) + 0] = (byte)(128 + 127*vector[0]);
-			pixels[i][4*(y*size+x) + 1] = (byte)(128 + 127*vector[1]);
-			pixels[i][4*(y*size+x) + 2] = (byte)(128 + 127*vector[2]);
-			pixels[i][4*(y*size+x) + 3] = 255;
-		  }
-		}
-	}
-
-	image->GenerateCubeImage( (const byte **)pixels, size,
-						   TF_LINEAR, false, TD_HIGH_QUALITY ); 
-
-	Mem_Free(pixels[0]);
-}
-
-
-
 
 /*
 ================
@@ -978,9 +910,6 @@ static filterName_t textureFilters[] = {
 		case TT_2D:
 			texEnum = GL_TEXTURE_2D;
 			break;
-		case TT_3D:
-			texEnum = GL_TEXTURE_3D;
-			break;
 		case TT_CUBIC:
 			texEnum = GL_TEXTURE_CUBE_MAP;
 			break;
@@ -990,17 +919,10 @@ static filterName_t textureFilters[] = {
 		if ( glt->texnum == idImage::TEXTURE_NOT_LOADED ) {
 			continue;
 		}
-		glt->Bind();
-		if ( glt->filter == TF_DEFAULT ) {
-			glTexParameterf(texEnum, GL_TEXTURE_MIN_FILTER, globalImages->textureMinFilter );
-			glTexParameterf(texEnum, GL_TEXTURE_MAG_FILTER, globalImages->textureMaxFilter );
-		}
-		if ( glConfig.anisotropicAvailable ) {
-			glTexParameterf(texEnum, GL_TEXTURE_MAX_ANISOTROPY_EXT, globalImages->textureAnisotropy );
-		}	
-		if ( glConfig.textureLODBiasAvailable ) {
-			glTexParameterf(texEnum, GL_TEXTURE_LOD_BIAS_EXT, globalImages->textureLODBias );
-		}
+
+		//TODO(johl): do we need this bind? does some caller rely on the image being bound to 0 after calling this fucntion?
+		glt->Bind(0);
+		glt->SetImageFilterAndRepeat();
 	}
 }
 
@@ -1379,6 +1301,8 @@ void idImageManager::SetNormalPalette( void ) {
 	temptable[255*3+1] =
 	temptable[255*3+2] = 128;
 
+	//TODO(johl): remove this function completely?
+/*
 	if ( !glConfig.sharedTexturePaletteAvailable ) {
 		return;
 	}
@@ -1391,6 +1315,7 @@ void idImageManager::SetNormalPalette( void ) {
 					   temptable );
 
 	glEnable( GL_SHARED_TEXTURE_PALETTE_EXT );
+*/
 }
 
 /*
@@ -1664,12 +1589,14 @@ void idImageManager::PurgeAllImages() {
 		images[i]->PurgeImage();
 	}
 
-	for ( int i = 0; i < 3; ++i ) {
-		for ( int j = 0; j < 6; ++j ) {
-			shadowmapImage[i][j]->PurgeImage();
-			shadowmapFramebuffer[i][j]->Purge();
-		}
-	}	
+	//FIXME(johl): reloading images breaks shadow mapping
+/*
+	shadowmapImage->PurgeImage();
+	shadowmapFramebuffer->Purge();
+
+	shadowmapAtlasImage->PurgeImage();
+	shadowmapAtlasFramebuffer->Purge();
+*/
 }
 
 /*
@@ -1919,20 +1846,38 @@ int idImageManager::SumOfUsedImages() {
 BindNull
 ===============
 */
-void idImageManager::BindNull() {
-	tmu_t			*tmu;
+void idImageManager::BindNull(int textureUnit) {
 
-	tmu = &backEnd.glState.tmu[backEnd.glState.currenttmu];
-
-	RB_LogComment( "BindNull()\n" );
-	if ( tmu->textureType == TT_CUBIC ) {
-		glDisable( GL_TEXTURE_CUBE_MAP_EXT );
-	} else if ( tmu->textureType == TT_3D ) {
-		glDisable( GL_TEXTURE_3D );
-	} else if ( tmu->textureType == TT_2D ) {
-		glDisable( GL_TEXTURE_2D );
+	if(textureUnit == -1) {
+		textureUnit = backEnd.glState.currenttmu;
 	}
-	tmu->textureType = TT_DISABLED;
+
+	tmu_t *tmu = &backEnd.glState.tmu[textureUnit];
+
+
+	if (tmu->currentTexture != 0) {
+		RB_LogComment( "BindNull()\n" );
+
+		if(glConfig.extDirectStateAccessAvailable) {
+			if (tmu->currentTextureType == TT_2D) {
+				glBindMultiTextureEXT(GL_TEXTURE0 +  textureUnit, GL_TEXTURE_2D, 0 );				
+			}
+			else if (tmu->currentTextureType == TT_CUBIC) {
+				glBindMultiTextureEXT(GL_TEXTURE0 +  textureUnit, GL_TEXTURE_CUBE_MAP, 0 );
+			}
+		} else {
+			GL_SelectTexture( textureUnit );
+
+			if (tmu->currentTextureType == TT_2D) {
+				glBindTexture( GL_TEXTURE_2D, 0 );
+			}
+			else if (tmu->currentTextureType == TT_CUBIC) {
+				glBindTexture( GL_TEXTURE_CUBE_MAP, 0 );
+			}
+		}
+
+		tmu->currentTexture = 0;
+	}
 }
 
 /*
@@ -1966,9 +1911,6 @@ void idImageManager::Init() {
 
 	if(!r_glCoreProfile.GetBool()) {
 		borderClampImage = ImageFromFunction( "_borderClamp", R_BorderClampImage ); //MegaTexture
-		specularTableImage = ImageFromFunction( "_specularTable", R_SpecularTableImage );
-		specular2DTableImage = ImageFromFunction( "_specular2DTable", R_Specular2DTableImage );
-		normalCubeMapImage = ImageFromFunction("_normalCubeMap", makeNormalizeVectorCubeMap);
 	}
 
 	rampImage = ImageFromFunction("_ramp", R_RampImage);
@@ -1981,7 +1923,6 @@ void idImageManager::Init() {
 	scratchImage = ImageFromFunction("_scratch", R_RGBA8Image );
 	scratchImage2 = ImageFromFunction("_scratch2", R_RGBA8Image );
 	accumImage = ImageFromFunction("_accum", R_RGBA8Image );
-	scratchCubeMapImage = ImageFromFunction("_scratchCubeMap", makeNormalizeVectorCubeMap );
 	currentRenderImage = ImageFromFunction("_currentRender", R_RGBA8Image );
 	currentDepthImage = ImageFromFunction("_currentDepth", R_Depth );
 
@@ -1989,18 +1930,12 @@ void idImageManager::Init() {
 	cmdSystem->AddCommand( "listImages", R_ListImages_f, CMD_FL_RENDERER, "lists images" );
 	cmdSystem->AddCommand( "combineCubeImages", R_CombineCubeImages_f, CMD_FL_RENDERER, "combines six images for roq compression" );
 
-	const int shadowmapSizes[] = {1024, 512, 256};
-	for(int j=0; j<sizeof(shadowmapSizes)/sizeof(shadowmapSizes[0]); ++j) {	
-		for(int i=0; i<6; ++i) {
-			char name[64] = {0};    
-			sprintf(name, "_shadowmapImage%d_%d", i, j);
-			shadowmapImage[j][i] = ImageFromFunction(name, R_Depth);
-			shadowmapFramebuffer[j][i] = new fhFramebuffer(shadowmapSizes[j], shadowmapSizes[j], nullptr, shadowmapImage[j][i]);
-		}
-	}
+	jitterImage = ImageFromFunction("_jitter", R_JitterImage );
+
+	shadowmapImage = ImageFromFunction( "_shadowmapImage", R_Depth );
+	shadowmapFramebuffer = new fhFramebuffer( 1024 * 4, 1024 * 4, nullptr, shadowmapImage );
 
 	defaultFramebuffer = new fhFramebuffer(0,0, nullptr, nullptr);
-  
 
 	// should forceLoadImages be here?
 }

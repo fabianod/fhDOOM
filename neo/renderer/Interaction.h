@@ -78,6 +78,8 @@ typedef struct {
 	int						expCulled;			// only for the experimental shadow buffer renderer
 
 	srfCullInfo_t			cullInfo;
+
+	bool                    isStaticWorldModel;
 } surfaceInteraction_t;
 
 

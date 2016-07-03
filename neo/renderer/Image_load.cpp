@@ -30,6 +30,7 @@ If you have questions concerning this license or the applicable additional terms
 #pragma hdrstop
 
 #include "tr_local.h"
+#include "Sampler.h"
 
 /*
 PROBLEM: compressed textures may break the zero clamp rule!
@@ -97,6 +98,8 @@ int idImage::BitsForInternalFormat( int internalFormat ) const {
 		return 4;			// not sure
 	case GL_COMPRESSED_RGBA_ARB:
 		return 8;			// not sure
+	case GL_DEPTH_COMPONENT:
+		return 32; //not sure... we don't request explicitly a 24bit or 32bit depth buffer?
 	default:
 		common->Error( "R_BitsForInternalFormat: BAD FORMAT:%i", internalFormat );
 	}
@@ -159,18 +162,6 @@ void idImage::UploadCompressedNormalMap( int width, int height, const byte *rgba
 				R_WritePalTGA( filename, normals, globalImages->compressedPalette, width, height);
 			}
 		}
-	}
-
-	if ( glConfig.sharedTexturePaletteAvailable ) {
-		glTexImage2D( GL_TEXTURE_2D,
-					mipLevel,
-					GL_COLOR_INDEX8_EXT,
-					width,
-					height,
-					0,
-					GL_COLOR_INDEX,
-					GL_UNSIGNED_BYTE,
-					normals );
 	}
 }
 
@@ -273,10 +264,7 @@ GLenum idImage::SelectInternalFormat( const byte **dataPtrs, int numDataPtrs, in
 
 	// catch normal maps first
 	if ( minimumDepth == TD_BUMP ) {
-		if ( globalImages->image_useCompression.GetBool() && globalImages->image_useNormalCompression.GetInteger() == 1 && glConfig.sharedTexturePaletteAvailable ) {
-			// image_useNormalCompression should only be set to 1 on nv_10 and nv_20 paths
-			return GL_COLOR_INDEX8_EXT;
-		} else if ( globalImages->image_useCompression.GetBool() && globalImages->image_useNormalCompression.GetInteger() && glConfig.textureCompressionAvailable ) {
+		if ( globalImages->image_useCompression.GetBool() && globalImages->image_useNormalCompression.GetInteger() && glConfig.textureCompressionAvailable ) {
 			// image_useNormalCompression == 2 uses rxgb format which produces really good quality for medium settings
 			return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
 		} else {
@@ -343,10 +331,7 @@ GLenum idImage::SelectInternalFormat( const byte **dataPtrs, int numDataPtrs, in
 		if ( minimumDepth != TD_HIGH_QUALITY && glConfig.textureCompressionAvailable ) {
 			return GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;	// one byte
 		}
-    if(r_glCoreProfile.GetBool())
-      return GL_RGBA8;
-    else
-      return GL_INTENSITY8;	// single byte for all channels
+		return GL_RGBA8;
 	}
 
 #if 0
@@ -376,56 +361,61 @@ GLenum idImage::SelectInternalFormat( const byte **dataPtrs, int numDataPtrs, in
 SetImageFilterAndRepeat
 ==================
 */
-void idImage::SetImageFilterAndRepeat() const {
+void idImage::SetImageFilterAndRepeat() {
+	sampler = fhSampler::GetSampler(filter, repeat, true, true);
+
+#if 0
 	// set the minimize / maximize filtering
-	switch( filter ) {
+	switch (filter) {
 	case TF_DEFAULT:
-		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, globalImages->textureMinFilter );
-		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, globalImages->textureMaxFilter );
+		glSamplerParameteri( samplernum, GL_TEXTURE_MIN_FILTER, globalImages->textureMinFilter );
+		glSamplerParameteri( samplernum, GL_TEXTURE_MAG_FILTER, globalImages->textureMaxFilter );
 		break;
 	case TF_LINEAR:
-		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+		glSamplerParameteri( samplernum, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+		glSamplerParameteri( samplernum, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 		break;
 	case TF_NEAREST:
-		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+		glSamplerParameteri( samplernum, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+		glSamplerParameteri( samplernum, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
 		break;
 	default:
 		common->FatalError( "R_CreateImage: bad texture filter" );
 	}
 
-	if ( glConfig.anisotropicAvailable ) {
+	if (glConfig.anisotropicAvailable) {
 		// only do aniso filtering on mip mapped images
-		if ( filter == TF_DEFAULT ) {
-			glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, globalImages->textureAnisotropy );
-		} else {
-			glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1 );
+		if (filter == TF_DEFAULT) {
+			glSamplerParameterf( samplernum, GL_TEXTURE_MAX_ANISOTROPY_EXT, globalImages->textureAnisotropy );
+		}
+		else {
+			glSamplerParameterf( samplernum, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1 );;
 		}
 	}
-	if ( glConfig.textureLODBiasAvailable ) {
-		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS_EXT, globalImages->textureLODBias );
-	}
+	glSamplerParameterf( samplernum, GL_TEXTURE_LOD_BIAS, globalImages->textureLODBias );
+
+	
 
 	// set the wrap/clamp modes
-	switch( repeat ) {
+	switch (repeat) {
 	case TR_REPEAT:
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT );
+		glSamplerParameteri( samplernum, GL_TEXTURE_WRAP_S, GL_REPEAT );
+		glSamplerParameteri( samplernum, GL_TEXTURE_WRAP_T, GL_REPEAT );
 		break;
 	case TR_CLAMP_TO_BORDER:
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER );
+		glSamplerParameteri( samplernum, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER );
+		glSamplerParameteri( samplernum, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER );
 		break;
 	case TR_CLAMP_TO_ZERO:
 	case TR_CLAMP_TO_ZERO_ALPHA:
 	case TR_CLAMP:
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+		glSamplerParameteri( samplernum, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+		glSamplerParameteri( samplernum, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
 		break;
 	default:
 		common->FatalError( "R_CreateImage: bad texture repeat" );
 	}
+#endif
 }
 
 /*
@@ -518,11 +508,6 @@ There is no way to specify explicit mip map levels
 void idImage::GenerateImage( const byte *pic, int width, int height, 
 					   textureFilter_t filterParm, bool allowDownSizeParm, 
 					   textureRepeat_t repeatParm, textureDepth_t depthParm ) {
-	bool	preserveBorder;
-	byte		*scaledBuffer;
-	int			scaled_width, scaled_height;
-	byte		*shrunk;
-
 	PurgeImage();
 
 	filter = filterParm;
@@ -539,15 +524,11 @@ void idImage::GenerateImage( const byte *pic, int width, int height,
 	}
 
 	// don't let mip mapping smear the texture into the clamped border
-	if ( repeat == TR_CLAMP_TO_ZERO ) {
-		preserveBorder = true;
-	} else {
-		preserveBorder = false;
-	}
+	const bool preserveBorder = ( repeat == TR_CLAMP_TO_ZERO );
 
 	// make sure it is a power of 2
-	scaled_width = MakePowerOfTwo( width );
-	scaled_height = MakePowerOfTwo( height );
+	int scaled_width = MakePowerOfTwo( width );
+	int scaled_height = MakePowerOfTwo( height );
 
 	if ( scaled_width != width || scaled_height != height ) {
 		common->Error( "R_CreateImage: not a power of 2 image" );
@@ -556,10 +537,7 @@ void idImage::GenerateImage( const byte *pic, int width, int height,
 	// Optionally modify our width/height based on options/hardware
 	GetDownsize( scaled_width, scaled_height );
 
-	scaledBuffer = NULL;
-
-	// generate the texture number
-	glGenTextures( 1, &texnum );
+	byte* scaledBuffer = NULL;
 
 	// select proper internal format before we resample
 	hasAlpha = false;
@@ -585,7 +563,7 @@ void idImage::GenerateImage( const byte *pic, int width, int height,
 		}
 
 		while ( width > scaled_width || height > scaled_height ) {
-			shrunk = R_MipMap( scaledBuffer, width, height, preserveBorder );
+			byte* shrunk = R_MipMap( scaledBuffer, width, height, preserveBorder );
 			R_StaticFree( scaledBuffer );
 			scaledBuffer = shrunk;
 
@@ -666,60 +644,51 @@ void idImage::GenerateImage( const byte *pic, int width, int height,
 			scaledBuffer[ i ] = 0;
 		}
 	}
+
+
+	// generate the texture number
+	glGenTextures( 1, &texnum );	
+
 	// upload the main image level
-	Bind();
-
-
-	if ( internalFormat == GL_COLOR_INDEX8_EXT ) {
-		/*
-		if ( depth == TD_BUMP ) {
-			for ( int i = 0; i < scaled_width * scaled_height * 4; i += 4 ) {
-				scaledBuffer[ i ] = scaledBuffer[ i + 3 ];
-				scaledBuffer[ i + 3 ] = 0;
-			}
-		}
-		*/
-		UploadCompressedNormalMap( scaled_width, scaled_height, scaledBuffer, 0 );
-	} else {
-		glTexImage2D( GL_TEXTURE_2D, 0, internalFormat, scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer );
+	if(glConfig.extDirectStateAccessAvailable) {
+		glTextureImage2DEXT( texnum, GL_TEXTURE_2D, 0, internalFormat, scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer );
+		glGenerateTextureMipmapEXT( texnum, GL_TEXTURE_2D );
 	}
+	else {
+		Bind(0);
+		glTexImage2D( GL_TEXTURE_2D, 0, internalFormat, scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer );
 
-	// create and upload the mip map levels, which we do in all cases, even if we don't think they are needed
-	int		miplevel;
+		// create and upload the mip map levels, which we do in all cases, even if we don't think they are needed
+		int miplevel = 0;
+		while (scaled_width > 1 || scaled_height > 1) {
+			// preserve the border after mip map unless repeating
+			byte* shrunk = R_MipMap( scaledBuffer, scaled_width, scaled_height, preserveBorder );
+			R_StaticFree( scaledBuffer );
+			scaledBuffer = shrunk;
 
-	miplevel = 0;
-	while ( scaled_width > 1 || scaled_height > 1 ) {
-		// preserve the border after mip map unless repeating
-		shrunk = R_MipMap( scaledBuffer, scaled_width, scaled_height, preserveBorder );
-		R_StaticFree( scaledBuffer );
-		scaledBuffer = shrunk;
+			scaled_width >>= 1;
+			scaled_height >>= 1;
+			if (scaled_width < 1) {
+				scaled_width = 1;
+			}
+			if (scaled_height < 1) {
+				scaled_height = 1;
+			}
+			miplevel++;
 
-		scaled_width >>= 1;
-		scaled_height >>= 1;
-		if ( scaled_width < 1 ) {
-			scaled_width = 1;
-		}
-		if ( scaled_height < 1 ) {
-			scaled_height = 1;
-		}
-		miplevel++;
+			// this is a visualization tool that shades each mip map
+			// level with a different color so you can see the
+			// rasterizer's texture level selection algorithm
+			// Changing the color doesn't help with lumminance/alpha/intensity formats...
+			if (depth == TD_DIFFUSE && globalImages->image_colorMipLevels.GetBool()) {
+				R_BlendOverTexture( (byte *)scaledBuffer, scaled_width * scaled_height, mipBlendColors[miplevel] );
+			}
 
-		// this is a visualization tool that shades each mip map
-		// level with a different color so you can see the
-		// rasterizer's texture level selection algorithm
-		// Changing the color doesn't help with lumminance/alpha/intensity formats...
-		if ( depth == TD_DIFFUSE && globalImages->image_colorMipLevels.GetBool() ) {
-			R_BlendOverTexture( (byte *)scaledBuffer, scaled_width * scaled_height, mipBlendColors[miplevel] );
-		}
-
-		// upload the mip map
-		if ( internalFormat == GL_COLOR_INDEX8_EXT ) {
-			UploadCompressedNormalMap( scaled_width, scaled_height, scaledBuffer, miplevel );
-		} else {
-			glTexImage2D( GL_TEXTURE_2D, miplevel, internalFormat, scaled_width, scaled_height, 
+			// upload the mip map
+			glTexImage2D( GL_TEXTURE_2D, miplevel, internalFormat, scaled_width, scaled_height,
 				0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer );
 		}
-	}
+	}	
 
 	if ( scaledBuffer != 0 ) {
 		R_StaticFree( scaledBuffer );
@@ -730,142 +699,6 @@ void idImage::GenerateImage( const byte *pic, int width, int height,
 	// see if we messed anything up
 	GL_CheckErrors();
 }
-
-
-/*
-==================
-Generate3DImage
-==================
-*/
-void idImage::Generate3DImage( const byte *pic, int width, int height, int picDepth,
-					   textureFilter_t filterParm, bool allowDownSizeParm, 
-					   textureRepeat_t repeatParm, textureDepth_t minDepthParm ) {
-	int			scaled_width, scaled_height, scaled_depth;
-
-	PurgeImage();
-
-	filter = filterParm;
-	allowDownSize = allowDownSizeParm;
-	repeat = repeatParm;
-	depth = minDepthParm;
-
-	// if we don't have a rendering context, just return after we
-	// have filled in the parms.  We must have the values set, or
-	// an image match from a shader before OpenGL starts would miss
-	// the generated texture
-	if ( !glConfig.isInitialized ) {
-		return;
-	}
-
-	// make sure it is a power of 2
-	scaled_width = MakePowerOfTwo( width );
-	scaled_height = MakePowerOfTwo( height );
-	scaled_depth = MakePowerOfTwo( picDepth );
-	if ( scaled_width != width || scaled_height != height || scaled_depth != picDepth ) {
-		common->Error( "R_Create3DImage: not a power of 2 image" );
-	}
-
-	// FIXME: allow picmip here
-
-	// generate the texture number
-	glGenTextures( 1, &texnum );
-
-	// select proper internal format before we resample
-	// this function doesn't need to know it is 3D, so just make it very "tall"
-	hasAlpha = false;
-	internalFormat = SelectInternalFormat( &pic, 1, width, height * picDepth, minDepthParm, &isMonochrome, &hasAlpha );
-
-	uploadHeight = scaled_height;
-	uploadWidth = scaled_width;
-	uploadDepth = scaled_depth;
-
-
-	type = TT_3D;
-
-	// upload the main image level
-	Bind();
-
-	glTexImage3D(GL_TEXTURE_3D, 0, internalFormat, scaled_width, scaled_height, scaled_depth,
-		0, GL_RGBA, GL_UNSIGNED_BYTE, pic );
-
-	// create and upload the mip map levels
-	int		miplevel;
-	byte	*scaledBuffer, *shrunk;
-
-	scaledBuffer = (byte *)R_StaticAlloc( scaled_width * scaled_height * scaled_depth * 4 );
-	memcpy( scaledBuffer, pic, scaled_width * scaled_height * scaled_depth * 4 );
-	miplevel = 0;
-	while ( scaled_width > 1 || scaled_height > 1 || scaled_depth > 1 ) {
-		// preserve the border after mip map unless repeating
-		shrunk = R_MipMap3D( scaledBuffer, scaled_width, scaled_height, scaled_depth,
-			(bool)(repeat != TR_REPEAT) );
-		R_StaticFree( scaledBuffer );
-		scaledBuffer = shrunk;
-
-		scaled_width >>= 1;
-		scaled_height >>= 1;
-		scaled_depth >>= 1;
-		if ( scaled_width < 1 ) {
-			scaled_width = 1;
-		}
-		if ( scaled_height < 1 ) {
-			scaled_height = 1;
-		}
-		if ( scaled_depth < 1 ) {
-			scaled_depth = 1;
-		}
-		miplevel++;
-
-		// upload the mip map
-		glTexImage3D(GL_TEXTURE_3D, miplevel, internalFormat, scaled_width, scaled_height, scaled_depth,
-			0, GL_RGBA, GL_UNSIGNED_BYTE, scaledBuffer );
-	}
-	R_StaticFree( scaledBuffer );
-
-	// set the minimize / maximize filtering
-	switch( filter ) {
-	case TF_DEFAULT:
-		glTexParameterf(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, globalImages->textureMinFilter );
-		glTexParameterf(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, globalImages->textureMaxFilter );
-		break;
-	case TF_LINEAR:
-		glTexParameterf(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-		glTexParameterf(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-		break;
-	case TF_NEAREST:
-		glTexParameterf(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-		glTexParameterf(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
-		break;
-	default:
-		common->FatalError( "R_CreateImage: bad texture filter" );
-	}
-
-	// set the wrap/clamp modes
-	switch( repeat ) {
-	case TR_REPEAT:
-		glTexParameterf( GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_REPEAT );
-		glTexParameterf( GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_REPEAT );
-		glTexParameterf( GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_REPEAT );
-		break;
-	case TR_CLAMP_TO_BORDER:
-		glTexParameterf( GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER );
-		glTexParameterf( GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER );
-		break;
-	case TR_CLAMP_TO_ZERO:
-	case TR_CLAMP_TO_ZERO_ALPHA:
-	case TR_CLAMP:
-		glTexParameterf( GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-		glTexParameterf( GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
-		glTexParameterf( GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE );
-		break;
-	default:
-		common->FatalError( "R_CreateImage: bad texture repeat" );
-	}
-
-	// see if we messed anything up
-	GL_CheckErrors();
-}
-
 
 /*
 ====================
@@ -899,8 +732,6 @@ void idImage::GenerateCubeImage( const byte *pic[6], int size,
 
 	width = height = size;
 
-	// generate the texture number
-	glGenTextures( 1, &texnum );
 
 	// select proper internal format before we resample
 	hasAlpha = false;
@@ -913,69 +744,65 @@ void idImage::GenerateCubeImage( const byte *pic[6], int size,
 	uploadHeight = scaled_height;
 	uploadWidth = scaled_width;
 
-	Bind();
 
-	// no other clamp mode makes sense
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	// generate the texture number
+	glGenTextures( 1, &texnum );
 
-	// set the minimize / maximize filtering
-	switch( filter ) {
-	case TF_DEFAULT:
-		glTexParameterf(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, globalImages->textureMinFilter );
-		glTexParameterf(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, globalImages->textureMaxFilter );
-		break;
-	case TF_LINEAR:
-		glTexParameterf(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-		glTexParameterf(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-		break;
-	case TF_NEAREST:
-		glTexParameterf(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-		glTexParameterf(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
-		break;
-	default:
-		common->FatalError( "R_CreateImage: bad texture filter" );
-	}
-
-	// upload the base level
-	// FIXME: support GL_COLOR_INDEX8_EXT?
-	for ( i = 0 ; i < 6 ; i++ ) {
-		glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X+i, 0, internalFormat, scaled_width, scaled_height, 0, 
-			GL_RGBA, GL_UNSIGNED_BYTE, pic[i] );
-	}
-
-
-	// create and upload the mip map levels
-	int		miplevel;
-	byte	*shrunk[6];
-
-	for ( i = 0 ; i < 6 ; i++ ) {
-		shrunk[i] = R_MipMap( pic[i], scaled_width, scaled_height, false );
-	}
-
-	miplevel = 1;
-	while ( scaled_width > 1 ) {
-		for ( i = 0 ; i < 6 ; i++ ) {
-			byte	*shrunken;
-
-			glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X+i, miplevel, internalFormat, 
-				scaled_width / 2, scaled_height / 2, 0, 
-				GL_RGBA, GL_UNSIGNED_BYTE, shrunk[i] );
-
-			if ( scaled_width > 2 ) {
-				shrunken = R_MipMap( shrunk[i], scaled_width/2, scaled_height/2, false );
-			} else {
-				shrunken = NULL;
-			}
-
-			R_StaticFree( shrunk[i] );
-			shrunk[i] = shrunken;
+	if(glConfig.extDirectStateAccessAvailable) {
+		for (i = 0; i < 6; i++) {
+			glTextureImage2DEXT( texnum, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internalFormat, scaled_width, scaled_height, 0,
+				GL_RGBA, GL_UNSIGNED_BYTE, pic[i] );
 		}
 
-		scaled_width >>= 1;
-		scaled_height >>= 1;
-		miplevel++;
+		glGenerateTextureMipmapEXT( texnum, GL_TEXTURE_CUBE_MAP );
 	}
+	else {
+		Bind( 0 );
+
+		// upload the base level
+		// FIXME: support GL_COLOR_INDEX8_EXT?
+		for (i = 0; i < 6; i++) {
+			glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internalFormat, scaled_width, scaled_height, 0,
+				GL_RGBA, GL_UNSIGNED_BYTE, pic[i] );
+		}
+
+
+		// create and upload the mip map levels
+		int		miplevel;
+		byte	*shrunk[6];
+
+		for (i = 0; i < 6; i++) {
+			shrunk[i] = R_MipMap( pic[i], scaled_width, scaled_height, false );
+		}
+
+		miplevel = 1;
+		while (scaled_width > 1) {
+			for (i = 0; i < 6; i++) {
+				byte	*shrunken;
+
+				glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, miplevel, internalFormat,
+					scaled_width / 2, scaled_height / 2, 0,
+					GL_RGBA, GL_UNSIGNED_BYTE, shrunk[i] );
+
+				if (scaled_width > 2) {
+					shrunken = R_MipMap( shrunk[i], scaled_width / 2, scaled_height / 2, false );
+				}
+				else {
+					shrunken = NULL;
+				}
+
+				R_StaticFree( shrunk[i] );
+				shrunk[i] = shrunken;
+			}
+
+			scaled_width >>= 1;
+			scaled_height >>= 1;
+			miplevel++;
+		}
+	}	
+
+	repeat = TR_CLAMP;
+	SetImageFilterAndRepeat();
 
 	// see if we messed anything up
 	GL_CheckErrors();
@@ -1225,7 +1052,7 @@ void idImage::WritePrecompressedImage() {
 	f->Write( &header, sizeof(header) );
 
 	// bind to the image so we can read back the contents
-	Bind();
+	Bind(0);
 
 	glPixelStorei( GL_PACK_ALIGNMENT, 1 );	// otherwise small rows get padded to 32 bits
 
@@ -1419,7 +1246,7 @@ bool idImage::CheckPrecompressedImage( bool fullLoad ) {
 
 	// if we don't support color index textures, we must load the full image
 	// should we just expand the 256 color image to 32 bit for upload?
-	if ( ddspf_dwFlags & DDSF_ID_INDEXCOLOR && !glConfig.sharedTexturePaletteAvailable ) {
+	if ( ddspf_dwFlags & DDSF_ID_INDEXCOLOR ) {
 		R_StaticFree( data );
 		return false;
 	}
@@ -1524,7 +1351,9 @@ void idImage::UploadPrecompressedImage( byte *data, int len ) {
 
 	type = TT_2D;			// FIXME: we may want to support pre-compressed cube maps in the future
 
-	Bind();
+	if(!glConfig.extDirectStateAccessAvailable) {
+		Bind(0);
+	}
 
 	int numMipmaps = 1;
 	if ( header->dwFlags & DDSF_MIPMAPCOUNT ) {
@@ -1553,9 +1382,19 @@ void idImage::UploadPrecompressedImage( byte *data, int len ) {
 			skipMip++;
 		} else {
 			if ( FormatIsDXT( internalFormat ) ) {
-				glCompressedTexImage2DARB( GL_TEXTURE_2D, i - skipMip, internalFormat, uw, uh, 0, size, imagedata );
+				if(glConfig.extDirectStateAccessAvailable) {
+					glCompressedTextureImage2DEXT( texnum, GL_TEXTURE_2D, i - skipMip, internalFormat, uw, uh, 0, size, imagedata );
+				} 
+				else {
+					glCompressedTexImage2DARB( GL_TEXTURE_2D, i - skipMip, internalFormat, uw, uh, 0, size, imagedata );
+				}
 			} else {
-				glTexImage2D( GL_TEXTURE_2D, i - skipMip, internalFormat, uw, uh, 0, externalFormat, GL_UNSIGNED_BYTE, imagedata );
+				if(glConfig.extDirectStateAccessAvailable) {
+					glTextureImage2DEXT( texnum, GL_TEXTURE_2D, i - skipMip, internalFormat, uw, uh, 0, externalFormat, GL_UNSIGNED_BYTE, imagedata );
+				}
+				else {
+					glTexImage2D( GL_TEXTURE_2D, i - skipMip, internalFormat, uw, uh, 0, externalFormat, GL_UNSIGNED_BYTE, imagedata );
+				}
 			}
 		}
 
@@ -1686,9 +1525,8 @@ void idImage::PurgeImage() {
 
 	// clear all the current binding caches, so the next bind will do a real one
 	for ( int i = 0 ; i < MAX_MULTITEXTURE_UNITS ; i++ ) {
-		backEnd.glState.tmu[i].current2DMap = -1;
-		backEnd.glState.tmu[i].current3DMap = -1;
-		backEnd.glState.tmu[i].currentCubeMap = -1;
+		backEnd.glState.tmu[i].currentTexture = TEXTURE_NOT_LOADED;
+		backEnd.glState.tmu[i].currentTextureType = TT_2D;
 	}
 }
 
@@ -1699,7 +1537,7 @@ Bind
 Automatically enables 2D mapping, cube mapping, or 3D texturing if needed
 ==============
 */
-void idImage::Bind() {
+void idImage::Bind(int textureUnit) {
 	if ( tr.logFile ) {
 		RB_LogComment( "idImage::Bind( %s )\n", imgName.c_str() );
 	}
@@ -1723,7 +1561,7 @@ void idImage::Bind() {
 	if ( texnum == TEXTURE_NOT_LOADED ) {
 		if ( partialImage ) {
 			// if we have a partial image, go ahead and use that
-			this->partialImage->Bind();
+			this->partialImage->Bind(textureUnit);
 
 			// start a background load of the full thing if it isn't already in the queue
 			if ( !backgroundLoadInProgress ) {
@@ -1739,48 +1577,40 @@ void idImage::Bind() {
 
 	// bump our statistic counters
 	frameUsed = backEnd.frameCount;
-	bindCount++;
+	bindCount++;	
 
-	tmu_t			*tmu = &backEnd.glState.tmu[backEnd.glState.currenttmu];
+	if(textureUnit == -1) {
+		textureUnit = backEnd.glState.currenttmu;
+	}
+	
+	tmu_t *tmu = &backEnd.glState.tmu[textureUnit];
 
-  if(!r_glCoreProfile.GetBool()) {
-	  // enable or disable apropriate texture modes
-	  if ( tmu->textureType != type && ( backEnd.glState.currenttmu <	glConfig.maxTextureUnits ) ) {
-		  if ( tmu->textureType == TT_CUBIC ) {
-			  glDisable( GL_TEXTURE_CUBE_MAP );
-		  } else if ( tmu->textureType == TT_3D ) {
-			  glDisable( GL_TEXTURE_3D );
-		  } else if ( tmu->textureType == TT_2D ) {
-			  glDisable( GL_TEXTURE_2D );
-		  }
-
-		  if ( type == TT_CUBIC ) {
-			  glEnable( GL_TEXTURE_CUBE_MAP );
-		  } else if ( type == TT_3D ) {
-			  glEnable( GL_TEXTURE_3D );
-		  } else if ( type == TT_2D ) {
-			  glEnable( GL_TEXTURE_2D );
-		  }
-		  tmu->textureType = type;
-	  }
-  }
-
-	// bind the texture
-	if ( type == TT_2D ) {
-		if ( tmu->current2DMap != texnum ) {
-			tmu->current2DMap = texnum;
-			glBindTexture( GL_TEXTURE_2D, texnum );
+	if(tmu->currentTexture != texnum) {
+		if(glConfig.extDirectStateAccessAvailable) {
+			if (type == TT_2D) {
+				glBindMultiTextureEXT(GL_TEXTURE0 + textureUnit, GL_TEXTURE_2D, texnum);
+			}
+			else if (type == TT_CUBIC) {
+				glBindMultiTextureEXT(GL_TEXTURE0 + textureUnit, GL_TEXTURE_CUBE_MAP, texnum);
+			}
 		}
-	} else if ( type == TT_CUBIC ) {
-		if ( tmu->currentCubeMap != texnum ) {
-			tmu->currentCubeMap = texnum;
-			glBindTexture( GL_TEXTURE_CUBE_MAP, texnum );
+		else {
+			GL_SelectTexture( textureUnit );
+
+			if (type == TT_2D) {
+				glBindTexture( GL_TEXTURE_2D, texnum );
+			}
+			else if (type == TT_CUBIC) {
+				glBindTexture( GL_TEXTURE_CUBE_MAP, texnum );
+			}
 		}
-	} else if ( type == TT_3D ) {
-		if ( tmu->current3DMap != texnum ) {
-			tmu->current3DMap = texnum;
-			glBindTexture( GL_TEXTURE_3D, texnum );
-		}
+
+		tmu->currentTexture = texnum;
+		tmu->currentTextureType = type;
+	}
+
+	if(sampler) {
+		sampler->Bind(textureUnit);
 	}
 
 	if ( com_purgeAll.GetBool() ) {
@@ -1796,92 +1626,37 @@ CopyFramebuffer
 ====================
 */
 void idImage::CopyFramebuffer( int x, int y, int imageWidth, int imageHeight, bool useOversizedBuffer ) {
-#if 1
-	Bind();
 
 	glReadBuffer( GL_BACK );
 
-	if (uploadWidth != imageWidth || uploadHeight != imageHeight) {
+	if (uploadWidth != imageWidth || uploadHeight != imageHeight || internalFormat != GL_RGB8) {
+
 		uploadWidth = imageWidth;
 		uploadHeight = imageHeight;
-		glTexImage2D( GL_TEXTURE_2D, 0, GL_RGB, imageWidth, imageHeight, 0, GL_RGB8, GL_UNSIGNED_BYTE, NULL );
+		internalFormat = GL_RGB8;
+		filter = TF_LINEAR;
+		repeat = TR_CLAMP;
+		type = TT_2D;
+		SetImageFilterAndRepeat();
 
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
-	}
-
-	glCopyTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, x, y, imageWidth, imageHeight, 0 );
-	backEnd.c_copyFrameBuffer++;
-#else
-	Bind();
-
-	if ( cvarSystem->GetCVarBool( "g_lowresFullscreenFX" ) ) {
-		imageWidth = 512;
-		imageHeight = 512;
-	}
-
-	// if the size isn't a power of 2, the image must be increased in size
-	int	potWidth, potHeight;
-
-	potWidth = MakePowerOfTwo( imageWidth );
-	potHeight = MakePowerOfTwo( imageHeight );
-
-	GetDownsize( imageWidth, imageHeight );
-	GetDownsize( potWidth, potHeight );
-
-	glReadBuffer( GL_BACK );
-
-	// only resize if the current dimensions can't hold it at all,
-	// otherwise subview renderings could thrash this
-	if ( ( useOversizedBuffer && ( uploadWidth < potWidth || uploadHeight < potHeight ) )
-		|| ( !useOversizedBuffer && ( uploadWidth != potWidth || uploadHeight != potHeight ) ) ) {
-		uploadWidth = potWidth;
-		uploadHeight = potHeight;
-		if ( potWidth == imageWidth && potHeight == imageHeight ) {
-			glCopyTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, x, y, imageWidth, imageHeight, 0 );
-		} else {
-			byte	*junk;
-			// we need to create a dummy image with power of two dimensions,
-			// then do a glCopyTexSubImage2D of the data we want
-			// this might be a 16+ meg allocation, which could fail on _alloca
-			junk = (byte *)Mem_Alloc( potWidth * potHeight * 4 );
-			memset( junk, 0, potWidth * potHeight * 4 );		//!@#
-#if 0 // Disabling because it's unnecessary and introduces a green strip on edge of _currentRender
-			for ( int i = 0 ; i < potWidth * potHeight * 4 ; i+=4 ) {
-				junk[i+1] = 255;
-			}
-#endif
-			glTexImage2D( GL_TEXTURE_2D, 0, GL_RGB, potWidth, potHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, junk );
-			Mem_Free( junk );
-
-			glCopyTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, x, y, imageWidth, imageHeight );
+		if (glConfig.extDirectStateAccessAvailable) {
+			glTextureImage2DEXT( texnum, GL_TEXTURE_2D, 0, internalFormat, imageWidth, imageHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL );
 		}
-	} else {
-		// otherwise, just subimage upload it so that drivers can tell we are going to be changing
-		// it and don't try and do a texture compression or some other silliness
-		glCopyTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, x, y, imageWidth, imageHeight );
+		else {
+			Bind( 0 );
+			glTexImage2D( GL_TEXTURE_2D, 0, internalFormat, imageWidth, imageHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL );
+		}
 	}
 
-	// if the image isn't a full power of two, duplicate an extra row and/or column to fix bilerps
-	if ( imageWidth != potWidth ) {
-		glCopyTexSubImage2D( GL_TEXTURE_2D, 0, imageWidth, 0, x+imageWidth-1, y, 1, imageHeight );
+	if (glConfig.extDirectStateAccessAvailable) {
+		glCopyTextureImage2DEXT( texnum, GL_TEXTURE_2D, 0, internalFormat, x, y, imageWidth, imageHeight, 0 );
 	}
-	if ( imageHeight != potHeight ) {
-		glCopyTexSubImage2D( GL_TEXTURE_2D, 0, 0, imageHeight, x, y+imageHeight-1, imageWidth, 1 );
+	else {
+		Bind( 0 );
+		glCopyTexImage2D( GL_TEXTURE_2D, 0, internalFormat, x, y, imageWidth, imageHeight, 0 );
 	}
-
-
-	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-
-	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
 
 	backEnd.c_copyFrameBuffer++;
-#endif
 }
 
 /*
@@ -1892,60 +1667,85 @@ This should just be part of copyFramebuffer once we have a proper image type fie
 ====================
 */
 void idImage::CopyDepthbuffer( int x, int y, int imageWidth, int imageHeight ) {
-	Bind();
 
-	glReadBuffer( GL_BACK );
+	glReadBuffer( GL_BACK );	
 
-	if (uploadWidth != imageWidth || uploadHeight != imageHeight) {
+	if (uploadWidth != imageWidth || uploadHeight != imageHeight || internalFormat != GL_DEPTH_COMPONENT) {
+
 		uploadWidth = imageWidth;
 		uploadHeight = imageHeight;
-		glTexImage2D( GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, imageWidth, imageHeight, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, NULL );
+		internalFormat = GL_DEPTH_COMPONENT;
+		filter = TF_LINEAR;
+		repeat = TR_CLAMP;
+		type = TT_2D;
+		SetImageFilterAndRepeat();
 
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+		if(glConfig.extDirectStateAccessAvailable) {
+			glTextureImage2DEXT( texnum, GL_TEXTURE_2D, 0, internalFormat, imageWidth, imageHeight, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, NULL );
+		}
+		else {
+			Bind( 0 );
+			glTexImage2D( GL_TEXTURE_2D, 0, internalFormat, imageWidth, imageHeight, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, NULL );
+		}
 	}
 
-	glCopyTexImage2D( GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, x, y, imageWidth, imageHeight, 0 );
+	if (glConfig.extDirectStateAccessAvailable) {
+		glCopyTextureImage2DEXT( texnum, GL_TEXTURE_2D, 0, internalFormat, x, y, imageWidth, imageHeight, 0 );
+	}
+	else {
+		Bind( 0 );
+		glCopyTexImage2D( GL_TEXTURE_2D, 0, internalFormat, x, y, imageWidth, imageHeight, 0 );
+	}
 
 	backEnd.c_copyFrameBuffer++;
 }
 
-void idImage::AttachDepthToFramebuffer( fhFramebuffer* framebuffer ) {
-	Bind();
+void idImage::AttachDepthToFramebuffer( fhFramebuffer* framebuffer ) {	
+	
+	if (uploadWidth != framebuffer->GetWidth() || uploadHeight != framebuffer->GetHeight() || internalFormat != GL_DEPTH_COMPONENT) {
 
-	if (uploadWidth != framebuffer->GetWidth() || uploadHeight != framebuffer->GetHeight()) {
 		uploadWidth = framebuffer->GetWidth();
 		uploadHeight = framebuffer->GetHeight();
+		internalFormat = GL_DEPTH_COMPONENT;
+		filter = TF_LINEAR;
+		repeat = TR_CLAMP;
+		type = TT_2D;
 
-		glTexImage2D( GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, uploadWidth, uploadHeight, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, NULL );
+		if(glConfig.extDirectStateAccessAvailable) {
+			glTextureImage2DEXT( texnum, GL_TEXTURE_2D, 0, internalFormat, uploadWidth, uploadHeight, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, NULL );
+		}
+		else {
+			Bind( 0 );
+			glTexImage2D( GL_TEXTURE_2D, 0, internalFormat, uploadWidth, uploadHeight, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_BYTE, NULL );
+		}
 
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+		SetImageFilterAndRepeat();
 	}
 
 	glFramebufferTexture( GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, texnum, 0 );
 }
 
 void idImage::AttachColorToFramebuffer( fhFramebuffer* framebuffer ) {
-	Bind();
+	
+	if (uploadWidth != framebuffer->GetWidth() || uploadHeight != framebuffer->GetHeight() || internalFormat != GL_RGB) {
 
-	if (uploadWidth != framebuffer->GetWidth() || uploadHeight != framebuffer->GetHeight()) {
 		uploadWidth = framebuffer->GetWidth();
 		uploadHeight = framebuffer->GetHeight();
+		internalFormat = GL_RGB;
+		filter = TF_LINEAR;
+		repeat = TR_CLAMP;
+		type = TT_2D;
 
-		glTexImage2D( GL_TEXTURE_2D, 0, GL_RGB, uploadWidth, uploadHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL );
+		if(glConfig.extDirectStateAccessAvailable) {
+			glTextureImage2DEXT( texnum, GL_TEXTURE_2D, 0, internalFormat, uploadWidth, uploadHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL );
+		}
+		else {
+			Bind( 0 );
+			glTexImage2D( GL_TEXTURE_2D, 0, internalFormat, uploadWidth, uploadHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL );
+		}
 
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+		SetImageFilterAndRepeat();
 	}
 
 	glFramebufferTexture( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, texnum, 0 );
@@ -1958,7 +1758,7 @@ RB_UploadScratchImage
 if rows = cols * 6, assume it is a cube map animation
 =============
 */
-void idImage::UploadScratch( const byte *data, int cols, int rows ) {
+void idImage::UploadScratch( int textureUnit, const byte *data, int cols, int rows ) {
 	int			i;
 
 	// if rows = cols * 6, assume it is a cube map animation
@@ -1968,32 +1768,60 @@ void idImage::UploadScratch( const byte *data, int cols, int rows ) {
 			uploadWidth = -1;	// for a non-sub upload
 		}
 
-		Bind();
-
 		rows /= 6;
-		// if the scratchImage isn't in the format we want, specify it as a new texture
-		if ( cols != uploadWidth || rows != uploadHeight ) {
-			uploadWidth = cols;
-			uploadHeight = rows;
 
-			// upload the base level
-			for ( i = 0 ; i < 6 ; i++ ) {
-				glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X_EXT+i, 0, GL_RGB8, cols, rows, 0, 
-					GL_RGBA, GL_UNSIGNED_BYTE, data + cols*rows*4*i );
+		if(glConfig.extDirectStateAccessAvailable) {
+			// if the scratchImage isn't in the format we want, specify it as a new texture
+			if (cols != uploadWidth || rows != uploadHeight) {
+				uploadWidth = cols;
+				uploadHeight = rows;
+
+				// upload the base level
+				for (i = 0; i < 6; i++) {
+					glTextureImage2DEXT( texnum, GL_TEXTURE_CUBE_MAP_POSITIVE_X_EXT + i, 0, GL_RGB8, cols, rows, 0,
+						GL_RGBA, GL_UNSIGNED_BYTE, data + cols*rows * 4 * i );
+				}
 			}
-		} else {
-			// otherwise, just subimage upload it so that drivers can tell we are going to be changing
-			// it and don't try and do a texture compression
-			for ( i = 0 ; i < 6 ; i++ ) {
-				glTexSubImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X_EXT+i, 0, 0, 0, cols, rows, 
-					GL_RGBA, GL_UNSIGNED_BYTE, data + cols*rows*4*i );
+			else {
+				// otherwise, just subimage upload it so that drivers can tell we are going to be changing
+				// it and don't try and do a texture compression
+				for (i = 0; i < 6; i++) {
+					glTextureSubImage2DEXT( texnum, GL_TEXTURE_CUBE_MAP_POSITIVE_X_EXT + i, 0, 0, 0, cols, rows,
+						GL_RGBA, GL_UNSIGNED_BYTE, data + cols*rows * 4 * i );
+				}
+			}
+
+			//TODO(johl): this bind is not strictly required, but the caller relies on this image being bound after
+			Bind( textureUnit );
+		}
+		else {
+			Bind( textureUnit );
+
+			// if the scratchImage isn't in the format we want, specify it as a new texture
+			if (cols != uploadWidth || rows != uploadHeight) {
+				uploadWidth = cols;
+				uploadHeight = rows;
+
+				// upload the base level
+				for (i = 0; i < 6; i++) {
+					glTexImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X_EXT + i, 0, GL_RGB8, cols, rows, 0,
+						GL_RGBA, GL_UNSIGNED_BYTE, data + cols*rows * 4 * i );
+				}
+			}
+			else {
+				// otherwise, just subimage upload it so that drivers can tell we are going to be changing
+				// it and don't try and do a texture compression
+				for (i = 0; i < 6; i++) {
+					glTexSubImage2D( GL_TEXTURE_CUBE_MAP_POSITIVE_X_EXT + i, 0, 0, 0, cols, rows,
+						GL_RGBA, GL_UNSIGNED_BYTE, data + cols*rows * 4 * i );
+				}
 			}
 		}
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-		// no other clamp mode makes sense
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+
+
+		filter = TF_LINEAR;
+		repeat = TR_CLAMP;
 	} else {
 		// otherwise, it is a 2D image
 		if ( type != TT_2D ) {
@@ -2001,31 +1829,42 @@ void idImage::UploadScratch( const byte *data, int cols, int rows ) {
 			uploadWidth = -1;	// for a non-sub upload
 		}
 
-		Bind();
+		if(glConfig.extDirectStateAccessAvailable) {
+			if (cols != uploadWidth || rows != uploadHeight) {
+				uploadWidth = cols;
+				uploadHeight = rows;
+				glTextureImage2DEXT( texnum, GL_TEXTURE_2D, 0, GL_RGB8, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, data );
+			}
+			else {
+				// otherwise, just subimage upload it so that drivers can tell we are going to be changing
+				// it and don't try and do a texture compression
+				glTextureSubImage2DEXT( texnum, GL_TEXTURE_2D, 0, 0, 0, cols, rows, GL_RGBA, GL_UNSIGNED_BYTE, data );
+			}
 
-		// if the scratchImage isn't in the format we want, specify it as a new texture
-		if ( cols != uploadWidth || rows != uploadHeight ) {
-			uploadWidth = cols;
-			uploadHeight = rows;
-			glTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, data );
-		} else {
-			// otherwise, just subimage upload it so that drivers can tell we are going to be changing
-			// it and don't try and do a texture compression
-			glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, cols, rows, GL_RGBA, GL_UNSIGNED_BYTE, data );
+			//TODO(johl): this bind is not strictly required, but the caller relies on this image being bound after
+			Bind( textureUnit );
 		}
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-		// these probably should be clamp, but we have a lot of issues with editor
-		// geometry coming out with texcoords slightly off one side, resulting in
-		// a smear across the entire polygon
-#if 1
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT );	
-#else
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-		glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );	
-#endif
+		else {
+			Bind( textureUnit );
+			// if the scratchImage isn't in the format we want, specify it as a new texture
+			if (cols != uploadWidth || rows != uploadHeight) {
+				uploadWidth = cols;
+				uploadHeight = rows;
+				glTexImage2D( GL_TEXTURE_2D, 0, GL_RGB8, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, data );
+			}
+			else {
+				// otherwise, just subimage upload it so that drivers can tell we are going to be changing
+				// it and don't try and do a texture compression
+				glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, cols, rows, GL_RGBA, GL_UNSIGNED_BYTE, data );
+			}
+		}
+
+
+		filter = TF_LINEAR;
+		repeat = TR_REPEAT;		
 	}
+
+	SetImageFilterAndRepeat();
 }
 
 
@@ -2049,9 +1888,6 @@ int idImage::StorageSize() const {
 	default:
 	case TT_2D:
 		baseSize = uploadWidth*uploadHeight;
-		break;
-	case TT_3D:
-		baseSize = uploadWidth*uploadHeight*uploadDepth;
 		break;
 	case TT_CUBIC:
 		baseSize = 6 * uploadWidth*uploadHeight;
@@ -2086,14 +1922,8 @@ void idImage::Print() const {
 	case TT_2D:
 		common->Printf( " " );
 		break;
-	case TT_3D:
-		common->Printf( "3" );
-		break;
 	case TT_CUBIC:
 		common->Printf( "C" );
-		break;
-	case TT_RECT:
-		common->Printf( "R" );
 		break;
 	default:
 		common->Printf( "<BAD TYPE:%i>", type );

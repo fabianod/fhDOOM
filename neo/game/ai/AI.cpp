@@ -4495,6 +4495,7 @@ void idAI::TriggerWeaponEffects( const idVec3 &muzzle ) {
 		GetJointWorldTransform( flashJointWorld, gameLocal.time, org, axis );
 
 		if ( worldMuzzleFlash.lightRadius.x > 0.0f ) {
+			worldMuzzleFlash.smLodBias = g_muzzleFlashLightLodBias.GetInteger();
 			worldMuzzleFlash.axis = axis;
 			worldMuzzleFlash.shaderParms[SHADERPARM_TIMEOFFSET] = -MS2SEC( gameLocal.time );
 			if ( worldMuzzleFlashHandle != - 1 ) {

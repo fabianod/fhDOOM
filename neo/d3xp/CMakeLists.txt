@@ -140,6 +140,7 @@ SET(SOURCES
   WorldSpawn.cpp
   WorldSpawn.h
   precompiled.h
+  ../framework/BuildVersion.cpp
 )
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})

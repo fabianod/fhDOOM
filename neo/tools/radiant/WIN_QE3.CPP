@@ -275,9 +275,9 @@ static HANDLE		hf;						/* file handle */
  */
 void OpenDialog(void) {
 	/* Obtain the system directory name and store it in szDirName. */
-	strcpy(szDirName, ValueForKey(g_qeglobals.d_project_entity, "mapspath"));
+	strcpy(szDirName, g_qeglobals.d_project_entity->ValueForKey("mapspath"));
 	if (strlen(szDirName) == 0) {
-		strcpy(szDirName, ValueForKey(g_qeglobals.d_project_entity, "basepath"));
+		strcpy(szDirName, g_qeglobals.d_project_entity->ValueForKey("basepath"));
 		strcat(szDirName, "\\maps");
 	}
 
@@ -324,7 +324,7 @@ void OpenDialog(void) {
  */
 void ProjectDialog(void) {
 	/* Obtain the system directory name and store it in szDirName. */
-	strcpy(szDirName, ValueForKey(g_qeglobals.d_project_entity, "basepath"));
+	strcpy(szDirName, g_qeglobals.d_project_entity->ValueForKey("basepath"));
 
 	/* Place the terminating null character in the szFile. */
 	szFile[0] = '\0';
@@ -362,7 +362,7 @@ extern void AddSlash(CString &strPath);
  =======================================================================================================================
  */
 void SaveAsDialog(bool bRegion) {
-	strcpy(szDirName, ValueForKey(g_qeglobals.d_project_entity, "basepath"));
+	strcpy(szDirName, g_qeglobals.d_project_entity->ValueForKey("basepath"));
 
 	CString strPath = szDirName;
 	AddSlash(strPath);

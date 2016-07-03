@@ -187,8 +187,6 @@ idVertexCache::Init
 void idVertexCache::Init() {
 	cmdSystem->AddCommand( "listVertexCache", R_ListVertexCache_f, CMD_FL_RENDERER, "lists vertex cache" );
 
-  assert(glConfig.ARBVertexBufferObjectAvailable);
-
 	// initialize the cache memory blocks
 	freeStaticHeaders.next = freeStaticHeaders.prev = &freeStaticHeaders;
 	staticHeaders.next = staticHeaders.prev = &staticHeaders;

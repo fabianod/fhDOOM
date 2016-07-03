@@ -173,16 +173,13 @@ void SCR_DrawTextRightAlign( float &y, const char *text, ... ) {
 	y += SMALLCHAR_HEIGHT + 4;
 }
 
-
-
-
 /*
 ==================
 SCR_DrawFPS
 ==================
 */
 #define	FPS_FRAMES	4
-float SCR_DrawFPS( float y ) {
+static float SCR_DrawFPS( int mode ) {
 	char		*s;
 	int			w;
 	static int	previousTimes[FPS_FRAMES];
@@ -200,6 +197,10 @@ float SCR_DrawFPS( float y ) {
 
 	previousTimes[index % FPS_FRAMES] = frameTime;
 	index++;
+
+	float y = 0;
+	int x = 0;
+
 	if ( index > FPS_FRAMES ) {
 		// average multiple frames together to smooth changes out a bit
 		total = 0;
@@ -212,13 +213,95 @@ float SCR_DrawFPS( float y ) {
 		fps = 10000 * FPS_FRAMES / total;
 		fps = (fps + 5)/10;
 
-		s = va( "%ifps", fps );
+		if(mode == 1) {
+			s = va( "%3dfps", fps );
+			x = 600;
+		} 
+		else if(mode == 2) {
+			s = va( "%4.2fms", static_cast<float>(total) / FPS_FRAMES );
+			x = 600;
+		}
+		else {
+			s = va( "%3dfps (%4.2fms)", fps, static_cast<float>(total) / FPS_FRAMES );			
+			x = 565;
+		}
+
 		w = strlen( s ) * BIGCHAR_WIDTH;
 
-		renderSystem->DrawBigStringExt( 635 - w, idMath::FtoiFast( y ) + 2, s, colorWhite, true, localConsole.charSetShader);
+		renderSystem->DrawScaledStringExt( x, idMath::FtoiFast( y ) + 2, s, colorWhite, true, localConsole.charSetShader, 0.55f );
 	}
 
 	return y + BIGCHAR_HEIGHT + 4;
+}
+
+/*
+==================
+SCR_DrawBackEndStats
+==================
+*/
+float SCR_DrawBackEndStats( float y ) {
+
+	int ypos = idMath::FtoiFast( y );
+	const float lineHeight = 11;
+
+	char buffer[128];
+	const float xpos = 440;
+	const float fontScale = 0.55f;
+
+	auto PrintStats = [&](const char* name, const backEndGroupStats_t& stats, const idVec4& color) {
+		const float milliseconds = stats.time * 0.001f;
+		sprintf( buffer, "%-15s  %4d  %4d  %6d  %6.2f", name, stats.passes, stats.drawcalls, stats.tris, milliseconds );
+		renderSystem->DrawScaledStringExt( xpos, ypos, buffer, color, true, localConsole.charSetShader, fontScale );
+		ypos += lineHeight;
+	};
+
+
+#define TIME_FRAMES 10
+	static backEndStats_t previous[TIME_FRAMES];
+	static unsigned frame = 0;
+
+	const auto stats = renderSystem->GetBackEndStats(); 
+	previous[frame] = stats;
+	frame = (frame + 1) % TIME_FRAMES;
+
+	backEndStats_t avg;
+	for(int j=0; j<TIME_FRAMES; ++j) {
+		avg += previous[j];
+	}
+
+	avg /= TIME_FRAMES;	
+
+	backEndGroupStats_t sm_total;
+	for(int i=0; i<3; ++i) {
+		sm_total += avg.groups[backEndGroup::ShadowMap0 + i];
+	}
+
+	backEndGroupStats_t total;
+	for (int i = 0; i < backEndGroup::NUM; ++i) {
+		total += avg.groups[i];
+	}
+
+	sprintf( buffer, "                    p    dc    tris    time");
+	renderSystem->DrawScaledStringExt( xpos, ypos, buffer, colorWhite, true, localConsole.charSetShader, fontScale );
+	ypos += lineHeight;
+
+	PrintStats("depth prepass", avg.groups[backEndGroup::DepthPrepass], colorWhite);	
+	//PrintStats("stencil shadows", avg.groups[backEndGroup::StencilShadows], colorWhite);	
+	PrintStats("shadow maps", sm_total, colorWhite);
+	PrintStats("    0", avg.groups[backEndGroup::ShadowMap0], colorMdGrey);
+	PrintStats("    1", avg.groups[backEndGroup::ShadowMap1], colorMdGrey);
+	PrintStats("    2", avg.groups[backEndGroup::ShadowMap2], colorMdGrey);
+	PrintStats("interaction", avg.groups[backEndGroup::Interaction], colorWhite);
+	PrintStats("non-interaction", avg.groups[backEndGroup::NonInteraction], colorWhite);
+	//PrintStats("fog lights", avg.groups[backEndGroup::FogLight], colorWhite);
+	//PrintStats("blend lights", avg.groups[backEndGroup::BlendLight], colorWhite);
+	PrintStats("          total", total, colorWhite);
+/*
+	sprintf( buffer, "                      total time: %6.2fms", avg.totaltime * 0.001f );
+	renderSystem->DrawScaledStringExt( xpos, ypos, buffer, colorWhite, true, localConsole.charSetShader, fontScale );
+	ypos += lineHeight;
+*/
+	return ypos;
 }
 
 /*
@@ -1075,7 +1158,7 @@ void idConsoleLocal::DrawSolidConsole( float frac ) {
 
 	renderSystem->SetColor( idStr::ColorForIndex( C_COLOR_CYAN ) );
 
-	idStr version = va("%s.%i", ENGINE_VERSION, BUILD_NUMBER);
+	idStr version = va("%s - %i", ENGINE_VERSION, BUILD_NUMBER);
 	i = version.Length();
 
   float fontScale = con_fontScale.GetFloat();
@@ -1184,8 +1267,12 @@ void	idConsoleLocal::Draw( bool forceFullScreen ) {
 		}
 	}
 
-	if ( com_showFPS.GetBool() ) {
-		y = SCR_DrawFPS( 0 );
+	if ( int mode = com_showFPS.GetInteger() ) {
+		y = SCR_DrawFPS( mode );		
+	}
+
+	if ( com_showBackendStats.GetBool() ) {
+		y = SCR_DrawBackEndStats( y );
 	}
 
 	if ( com_showMemoryUsage.GetBool() ) {

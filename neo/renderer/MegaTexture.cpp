@@ -224,15 +224,15 @@ void idMegaTexture::BindForViewOrigin( const idVec3 viewOrigin ) {
 	SetViewOrigin( viewOrigin );
 
 	// borderClamp image goes in texture 0
-	GL_SelectTexture( 0 );
-	globalImages->borderClampImage->Bind();
+	//GL_SelectTexture( 0 );
+	globalImages->borderClampImage->Bind(0);
 
 	// level images in higher textures, blurriest first
 	for ( int i = 0 ; i < 7 ; i++ ) {
-		GL_SelectTexture( 1+i );
+		//GL_SelectTexture( 1+i );
 
 		if ( i >= numLevels ) {
-			globalImages->whiteImage->Bind();
+			globalImages->whiteImage->Bind( 1+i );
 
 			static float	parms[4] = { -2, -2, 0, 1 };	// no contribution
 			glProgramLocalParameter4fvARB( GL_VERTEX_PROGRAM_ARB, i, parms );
@@ -241,12 +241,12 @@ void idMegaTexture::BindForViewOrigin( const idVec3 viewOrigin ) {
 			
 			if ( r_showMegaTexture.GetBool() ) {
 				if ( i & 1 ) {
-					globalImages->blackImage->Bind();
+					globalImages->blackImage->Bind( 1+i );
 				} else {
-					globalImages->whiteImage->Bind();
+					globalImages->whiteImage->Bind( 1+i );
 				}
 			} else {
-				level->image->Bind();
+				level->image->Bind( 1+i );
 			}
 			glProgramLocalParameter4fvARB( GL_VERTEX_PROGRAM_ARB, i, level->parms );
 		}
@@ -436,7 +436,7 @@ void idTextureLevel::UpdateForCenter( float center[2] ) {
 		}
 	}
 
-	image->Bind();
+	image->Bind(0 /*?*/);
 
 	for ( int x = 0 ; x < TILE_PER_LEVEL ; x++ ) {
 		for ( int y = 0 ; y < TILE_PER_LEVEL ; y++ ) {

@@ -436,6 +436,11 @@ void R_DeriveLightData( idRenderLightLocal *light ) {
 	// a projected light will have one shadowFrustum, a point light will have
 	// six unless the light center is outside the box
 	R_MakeShadowFrustums( light );
+
+	// Rendering shadow maps requires a slightly different frustum (needs to be 
+	// symmetric, even if the light itself is not symmetric (globalLightOrigin 
+	// not centered)
+	R_MakeShadowMapFrustums( light );
 }
 
 /*

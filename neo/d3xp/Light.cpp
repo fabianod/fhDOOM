@@ -276,6 +276,8 @@ void idLight::Restore( idRestoreGame *savefile ) {
 		}
 	}
 
+	renderLight.occlusionModel = renderModelManager->CheckModel( va( "_occluder_%s", name.c_str() ) );
+
 	savefile->ReadVec3( localLightOrigin );
 	savefile->ReadMat3( localLightAxis );
 
@@ -349,6 +351,7 @@ void idLight::Spawn( void ) {
 	if ( name[ 0 ] ) {
 		// this will return 0 if not found
 		renderLight.prelightModel = renderModelManager->CheckModel( va( "_prelight_%s", name.c_str() ) );
+		renderLight.occlusionModel = renderModelManager->CheckModel( va( "_occluder_%s", name.c_str() ) );
 	}
 
 	spawnArgs.GetBool( "start_off", "0", start_off );

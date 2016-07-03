@@ -48,6 +48,9 @@ extern idCVar	g_projectileLights;
 extern idCVar	g_doubleVision;
 extern idCVar	g_muzzleFlash;
 
+extern idCVar   g_projectileLightLodBias;
+extern idCVar   g_muzzleFlashLightLodBias;
+
 extern idCVar	g_disasm;
 extern idCVar	g_debugBounds;
 extern idCVar	g_debugAnim;

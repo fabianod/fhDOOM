@@ -155,18 +155,9 @@ void RB_RenderTriangleSurface( const srfTriangles_t *tri ) {
 	}
 
     const int offset = vertexCache.Bind(tri->ambientCache);
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_color);
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_texcoord);
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), GL_AttributeOffset(offset, idDrawVert::xyzOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(idDrawVert), GL_AttributeOffset(offset, idDrawVert::colorOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(idDrawVert), GL_AttributeOffset(offset, idDrawVert::texcoordOffset));
-	
-	RB_DrawElementsWithCounters( tri );
+	GL_SetupVertexAttributes(fhVertexLayout::DrawPosColorTexOnly, offset);
 
-    glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-    glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_color);
-    glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_texcoord);
+	RB_DrawElementsWithCounters( tri );
 }
 
 /*
@@ -193,7 +184,7 @@ void RB_EnterWeaponDepthHack() {
 
 	matrix[14] *= 0.25;
 
-	GL_ProjectionMatrix.Load( matrix );
+	fhRenderProgram::SetProjectionMatrix( matrix );
 }
 
 /*
@@ -210,7 +201,7 @@ void RB_EnterModelDepthHack( float depth ) {
 
 	matrix[14] -= depth;
 
-	GL_ProjectionMatrix.Load( matrix );
+	fhRenderProgram::SetProjectionMatrix( matrix );
 }
 
 /*
@@ -221,7 +212,7 @@ RB_LeaveDepthHack
 void RB_LeaveDepthHack() {
 	glDepthRange( 0, 1 );
 
-	GL_ProjectionMatrix.Load( backEnd.viewDef->projectionMatrix );
+	fhRenderProgram::SetProjectionMatrix( backEnd.viewDef->projectionMatrix );
 }
 
 /*
@@ -236,26 +227,22 @@ be updated after the triangle function completes.
 */
 void RB_RenderDrawSurfListWithFunction( drawSurf_t **drawSurfs, int numDrawSurfs, 
 											  void (*triFunc_)( const drawSurf_t *) ) {
-	int				i;
-	const drawSurf_t		*drawSurf;
-
 	backEnd.currentSpace = NULL;
 
-	for (i = 0  ; i < numDrawSurfs ; i++ ) {
-		drawSurf = drawSurfs[i];
+	for (int i = 0  ; i < numDrawSurfs ; i++ ) {
+		const drawSurf_t* drawSurf = drawSurfs[i];
 
 		// change the matrix if needed
 		if ( drawSurf->space != backEnd.currentSpace ) {
-			GL_ModelViewMatrix.Load( drawSurf->space->modelViewMatrix );
 			fhRenderProgram::SetModelViewMatrix(drawSurf->space->modelViewMatrix);
-		}
 
-		if ( drawSurf->space->weaponDepthHack ) {
-			RB_EnterWeaponDepthHack();
-		}
-
-		if ( drawSurf->space->modelDepthHack != 0.0f ) {
-			RB_EnterModelDepthHack( drawSurf->space->modelDepthHack );
+			if (drawSurf->space->modelDepthHack != 0.0f) {
+				RB_EnterModelDepthHack( drawSurf->space->modelDepthHack );
+			} else 	if (drawSurf->space->weaponDepthHack) {
+				RB_EnterWeaponDepthHack();
+			} else if(!backEnd.currentSpace || backEnd.currentSpace->modelDepthHack || backEnd.currentSpace->weaponDepthHack ) {
+				RB_LeaveDepthHack();
+			}			
 		}
 
 		// change the scissor if needed
@@ -270,10 +257,6 @@ void RB_RenderDrawSurfListWithFunction( drawSurf_t **drawSurfs, int numDrawSurfs
 		// render it
 		triFunc_( drawSurf );
 
-		if ( drawSurf->space->weaponDepthHack || drawSurf->space->modelDepthHack != 0.0f ) {
-			RB_LeaveDepthHack();
-		}
-
 		backEnd.currentSpace = drawSurf->space;
 	}
 }
@@ -285,22 +268,23 @@ RB_RenderDrawSurfChainWithFunction
 */
 void RB_RenderDrawSurfChainWithFunction( const drawSurf_t *drawSurfs, 
 										void (*triFunc_)( const drawSurf_t *) ) {
-	const drawSurf_t		*drawSurf;
-
 	backEnd.currentSpace = NULL;
 
-	for ( drawSurf = drawSurfs ; drawSurf ; drawSurf = drawSurf->nextOnLight ) {
+	for ( const drawSurf_t* drawSurf = drawSurfs ; drawSurf ; drawSurf = drawSurf->nextOnLight ) {
+
 		// change the matrix if needed
-		if ( drawSurf->space != backEnd.currentSpace ) {
-			GL_ModelViewMatrix.Load( drawSurf->space->modelViewMatrix );
-		}
+		if (drawSurf->space != backEnd.currentSpace) {
+			fhRenderProgram::SetModelViewMatrix( drawSurf->space->modelViewMatrix );
 
-		if ( drawSurf->space->weaponDepthHack ) {
-			RB_EnterWeaponDepthHack();
-		}
-
-		if ( drawSurf->space->modelDepthHack ) {
-			RB_EnterModelDepthHack( drawSurf->space->modelDepthHack );
+			if (drawSurf->space->modelDepthHack != 0.0f) {
+				RB_EnterModelDepthHack( drawSurf->space->modelDepthHack );
+			}
+			else 	if (drawSurf->space->weaponDepthHack) {
+				RB_EnterWeaponDepthHack();
+			}
+			else if (!backEnd.currentSpace || backEnd.currentSpace->modelDepthHack || backEnd.currentSpace->weaponDepthHack) {
+				RB_LeaveDepthHack();
+			}			
 		}
 
 		// change the scissor if needed
@@ -313,11 +297,6 @@ void RB_RenderDrawSurfChainWithFunction( const drawSurf_t *drawSurfs,
 			const GLsizei height = backEnd.currentScissor.y2 + 1 - backEnd.currentScissor.y1;
 
 			if (width <= 0 || height <= 0){
-				if (drawSurf->space->weaponDepthHack || drawSurf->space->modelDepthHack != 0.0f) {
-					RB_LeaveDepthHack();
-				}
-
-				backEnd.currentSpace = drawSurf->space;
 				return;
 			}
 
@@ -326,10 +305,6 @@ void RB_RenderDrawSurfChainWithFunction( const drawSurf_t *drawSurfs,
 
 		// render it
 		triFunc_( drawSurf );
-
-		if ( drawSurf->space->weaponDepthHack || drawSurf->space->modelDepthHack != 0.0f ) {
-			RB_LeaveDepthHack();
-		}
 
 		backEnd.currentSpace = drawSurf->space;
 	}
@@ -397,53 +372,6 @@ void RB_GetShaderTextureMatrix( const float *shaderRegisters,
   matrix[1][2] = m[9];
   matrix[1][3] = m[13];
 }
-
-/*
-======================
-RB_LoadShaderTextureMatrix
-======================
-*/
-void RB_LoadShaderTextureMatrix( const float *shaderRegisters, const textureStage_t *texture ) {
-	float	matrix[16];
-
-	RB_GetShaderTextureMatrix( shaderRegisters, texture, matrix );
-	GL_TextureMatrix.Load( matrix );
-}
-
-/*
-======================
-RB_BindVariableStageImage
-
-Handles generating a cinematic frame if needed
-======================
-*/
-void RB_BindVariableStageImage( const textureStage_t *texture, const float *shaderRegisters ) {
-	if ( texture->cinematic ) {
-		cinData_t	cin;
-
-		if ( r_skipDynamicTextures.GetBool() ) {
-			globalImages->defaultImage->Bind();
-			return;
-		}
-
-		// offset time by shaderParm[7] (FIXME: make the time offset a parameter of the shader?)
-		// We make no attempt to optimize for multiple identical cinematics being in view, or
-		// for cinematics going at a lower framerate than the renderer.
-		cin = texture->cinematic->ImageForTime( (int)(1000 * ( backEnd.viewDef->floatTime + backEnd.viewDef->renderView.shaderParms[11] ) ) );
-
-		if ( cin.image ) {
-			globalImages->cinematicImage->UploadScratch( cin.image, cin.imageWidth, cin.imageHeight );
-		} else {
-			globalImages->blackImage->Bind();
-		}
-	} else {
-		//FIXME: see why image is invalid
-		if (texture->image) {
-			texture->image->Bind();
-		}
-	}
-}
-
 
 //=============================================================================================
 
@@ -666,12 +594,6 @@ void RB_CreateSingleDrawInteractions( const drawSurf_t *surf, void (*DrawInterac
 		RB_LogComment( "---------- RB_CreateSingleDrawInteractions %s on %s ----------\n", lightShader->GetName(), surfaceShader->GetName() );
 	}
 
-	// change the matrix and light projection vectors if needed
-	if ( surf->space != backEnd.currentSpace ) {
-		backEnd.currentSpace = surf->space;
-		GL_ModelViewMatrix.Load( surf->space->modelViewMatrix );
-	}
-
 	// change the scissor if needed
 	if ( r_useScissor.GetBool() && !backEnd.currentScissor.Equals( surf->scissorRect ) ) {
 		backEnd.currentScissor = surf->scissorRect;
@@ -682,6 +604,7 @@ void RB_CreateSingleDrawInteractions( const drawSurf_t *surf, void (*DrawInterac
 	}
 
 	// hack depth range if needed
+	/*
 	if ( surf->space->weaponDepthHack ) {
 		RB_EnterWeaponDepthHack();
 	}
@@ -689,6 +612,7 @@ void RB_CreateSingleDrawInteractions( const drawSurf_t *surf, void (*DrawInterac
 	if ( surf->space->modelDepthHack ) {
 		RB_EnterModelDepthHack( surf->space->modelDepthHack );
 	}
+	*/
 
 	inter.surf = surf;
 	inter.lightFalloffImage = vLight->falloffImage;
@@ -800,9 +724,11 @@ void RB_CreateSingleDrawInteractions( const drawSurf_t *surf, void (*DrawInterac
 	}
 
 	// unhack depth range if needed
+	/*
 	if ( surf->space->weaponDepthHack || surf->space->modelDepthHack != 0.0f ) {
 		RB_LeaveDepthHack();
 	}
+	*/
 }
 
 /*

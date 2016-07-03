@@ -97,7 +97,7 @@ void GLimp_ActivateContext() {
 
 void GLimp_DeactivateContext() {
 	assert( dpy );
-	glXMakeCurrent( dpy, None, NULL );
+	glXMakeCurrent( dpy, 0, NULL );
 }
 
 /*
@@ -297,7 +297,7 @@ int GLX_Init(glimpParms_t a) {
 		GLX_DEPTH_SIZE, 24,		// 8, 9
 		GLX_STENCIL_SIZE, 8,	// 10, 11
 		GLX_ALPHA_SIZE, 8, // 12, 13
-		None
+		0
 	};
 	// these match in the array
 #define ATTR_RED_IDX 2

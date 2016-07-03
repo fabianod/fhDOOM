@@ -413,8 +413,7 @@ void RB_ShowIntensity( void ) {
 		idVec2(globalImages->currentRenderImage->uploadWidth, globalImages->currentRenderImage->uploadHeight),
 		idVec2(backEnd.viewDef->viewport.x2 - backEnd.viewDef->viewport.x1 + 1,	backEnd.viewDef->viewport.y2 - backEnd.viewDef->viewport.y1 + 1));
 
-    GL_SelectTexture(0);
-    globalImages->currentRenderImage->Bind();    
+    globalImages->currentRenderImage->Bind(0);    
 
     fhImmediateMode im(true);    
     im.Color3f(1, 1, 1);
@@ -464,10 +463,9 @@ void RB_ShowDepthBuffer( void ) {
 	glRasterPos2f( 0, 0 );
 	GL_ProjectionMatrix.Pop();
 
-  GL_ModelViewMatrix.Pop();
+	GL_ModelViewMatrix.Pop();
 
-	GL_State( GLS_DEPTHFUNC_ALWAYS );
-	glColor3f( 1, 1, 1 );
+	GL_State( GLS_DEPTHFUNC_ALWAYS );	
 	globalImages->BindNull();
 
 	depthReadback = R_StaticAlloc( glConfig.vidWidth * glConfig.vidHeight*4 );
@@ -523,13 +521,10 @@ void RB_ShowLightCount(void) {
 
 	glStencilFunc(GL_ALWAYS, 1, 255);
 
-	globalImages->defaultImage->Bind();
+	globalImages->defaultImage->Bind(0);
 
 
-	GL_UseProgram(vertexColorProgram);
-	glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-	glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_color);
-
+	GL_UseProgram(vertexColorProgram);	
 
 	for (vLight = backEnd.viewDef->viewLights; vLight; vLight = vLight->next) {
 		for (i = 0; i < 2; i++) {
@@ -544,19 +539,14 @@ void RB_ShowLightCount(void) {
 				fhRenderProgram::SetModelViewMatrix(GL_ModelViewMatrix.Top());
 				fhRenderProgram::SetProjectionMatrix(GL_ProjectionMatrix.Top());
 
-				glVertexAttribPointer(fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), GL_AttributeOffset(offset, idDrawVert::xyzOffset));
-				glVertexAttribPointer(fhRenderProgram::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(idDrawVert), GL_AttributeOffset(offset, idDrawVert::colorOffset));
+				GL_SetupVertexAttributes(fhVertexLayout::DrawPosColorOnly, offset);
 
 				RB_DrawElementsWithCounters(surf->geo);
 			}
 		}
 	}
 
-
-	glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-	glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_color);
 	GL_UseProgram(nullptr);
-
 
 	// display the results
 	R_ColorByStencilBuffer();
@@ -586,10 +576,8 @@ void RB_ShowSilhouette(void) {
 
 	//
 	// clear all triangle edges to black
-	//
-	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	//	
 	globalImages->BindNull();
-	glDisable(GL_TEXTURE_2D);
 	glDisable(GL_STENCIL_TEST);
 
 	GL_UseProgram(flatColorProgram);
@@ -647,15 +635,12 @@ void RB_ShowSilhouette(void) {
 				fhRenderProgram::SetDiffuseColor(idVec4(0.5f, 0, 0, 1));
 
 				const int offset = vertexCache.Bind(tri->shadowCache);
-				glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-				glVertexAttribPointer(fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(shadowCache_t), GL_AttributeOffset(offset, 0));
+				GL_SetupVertexAttributes(fhVertexLayout::ShadowSilhouette, offset);				
 
 				glDrawElements(GL_LINES,
 					indicesUsed,
 					GL_UNSIGNED_SHORT,
 					indices);
-
-				glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
 			}
 		}
 	}
@@ -699,7 +684,7 @@ static void RB_ShowShadowCount( void ) {
 
 	glStencilFunc( GL_ALWAYS, 1, 255 );
 
-	globalImages->defaultImage->Bind();
+	globalImages->defaultImage->Bind(0);
 
 	// draw both sides
 	GL_Cull( CT_TWO_SIDED );
@@ -763,10 +748,8 @@ static void RB_ShowTris( drawSurf_t **drawSurfs, int numDrawSurfs ) {
 	if (!r_showTris.GetInteger()) {
 		return;
 	}
-
-	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+	
 	globalImages->BindNull();
-	glDisable(GL_TEXTURE_2D);
 	glDisable(GL_STENCIL_TEST);
 
 	GL_UseProgram(flatColorProgram);
@@ -826,13 +809,9 @@ static void RB_ShowSurfaceInfo( drawSurf_t **drawSurfs, int numDrawSurfs ) {
 	if ( !tr.primaryWorld->Trace( mt, start, end, 0.0f, false ) ) {
 		return;
 	}
-
-	glDisableClientState( GL_TEXTURE_COORD_ARRAY );
-	globalImages->BindNull();
-	glDisable( GL_TEXTURE_2D );
+	
+	globalImages->BindNull();	
 	glDisable( GL_STENCIL_TEST );
-
-	glColor3f( 1, 1, 1 );
 
 	GL_State( GLS_POLYMODE_LINE );
 
@@ -878,14 +857,9 @@ static void RB_ShowViewEntitys( viewEntity_t *vModels ) {
 		common->Printf( "\n" );
 		return;
 	}
-
-	glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	
 	globalImages->BindNull();
-	glDisable( GL_TEXTURE_2D );
 	glDisable( GL_STENCIL_TEST );
-
-	glColor3f( 1, 1, 1 );
-
 
 	GL_State( GLS_POLYMODE_LINE );
 
@@ -938,15 +912,14 @@ static void RB_ShowTexturePolarity( drawSurf_t **drawSurfs, int numDrawSurfs ) {
 	if ( !r_showTexturePolarity.GetBool() ) {
 		return;
 	}
-	glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	
 	globalImages->BindNull();
 	glDisable( GL_STENCIL_TEST );
 
 	GL_State( GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA );
 
-  fhImmediateMode im;
-	im.Color3f( 1, 1, 1 );
-
+	fhImmediateMode im;
+	
 	for ( i = 0 ; i < numDrawSurfs ; i++ ) {
 		drawSurf = drawSurfs[i];
 		tri = drawSurf->geo;
@@ -1008,13 +981,13 @@ static void RB_ShowUnsmoothedTangents( drawSurf_t **drawSurfs, int numDrawSurfs 
 	if ( !r_showUnsmoothedTangents.GetBool() ) {
 		return;
 	}
-	glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+
 	globalImages->BindNull();
 	glDisable( GL_STENCIL_TEST );
 
 	GL_State( GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA );
 
-  fhImmediateMode im;
+	fhImmediateMode im;
 	im.Color4f( 0, 1, 0, 0.5 );
 
 	for ( i = 0 ; i < numDrawSurfs ; i++ ) {
@@ -1064,13 +1037,13 @@ static void RB_ShowTangentSpace( drawSurf_t **drawSurfs, int numDrawSurfs ) {
 	if ( !r_showTangentSpace.GetInteger() ) {
 		return;
 	}
-	glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	
 	globalImages->BindNull();
 	glDisable( GL_STENCIL_TEST );
 
 	GL_State( GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA );
 
-  fhImmediateMode im;
+	fhImmediateMode im;
 
 	for ( i = 0 ; i < numDrawSurfs ; i++ ) {
 		drawSurf = drawSurfs[i];
@@ -1120,13 +1093,13 @@ static void RB_ShowVertexColor( drawSurf_t **drawSurfs, int numDrawSurfs ) {
 	if ( !r_showVertexColor.GetBool() ) {
 		return;
 	}
-	glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+
 	globalImages->BindNull();
 	glDisable( GL_STENCIL_TEST );
 
 	GL_State( GLS_DEPTHFUNC_LESS );
 
-  fhImmediateMode im;
+	fhImmediateMode im;
 
 	for ( i = 0 ; i < numDrawSurfs ; i++ ) {
 		drawSurf = drawSurfs[i];
@@ -1173,7 +1146,6 @@ static void RB_ShowNormals( drawSurf_t **drawSurfs, int numDrawSurfs ) {
 	}
 
 	GL_State( GLS_POLYMODE_LINE );
-	glDisableClientState( GL_TEXTURE_COORD_ARRAY );
 
 	globalImages->BindNull();
 	glDisable( GL_STENCIL_TEST );
@@ -1191,7 +1163,7 @@ static void RB_ShowNormals( drawSurf_t **drawSurfs, int numDrawSurfs ) {
 		showNumbers = false;
 	}
 
-  fhImmediateMode im;
+	fhImmediateMode im;
 	for ( i = 0 ; i < numDrawSurfs ; i++ ) {
 		drawSurf = drawSurfs[i];
 
@@ -1264,14 +1236,13 @@ static void RB_AltShowNormals( drawSurf_t **drawSurfs, int numDrawSurfs ) {
 		return;
 	}
 
-	GL_State( GLS_DEFAULT );
-	glDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	GL_State( GLS_DEFAULT );	
 
 	globalImages->BindNull();
 	glDisable( GL_STENCIL_TEST );
 	glDisable( GL_DEPTH_TEST );
 
-  fhImmediateMode im;
+	fhImmediateMode im;
 	for ( i = 0 ; i < numDrawSurfs ; i++ ) {
 		drawSurf = drawSurfs[i];
 
@@ -1342,11 +1313,10 @@ static void RB_ShowTextureVectors( drawSurf_t **drawSurfs, int numDrawSurfs ) {
 	}
 
 	GL_State( GLS_DEPTHFUNC_LESS );
-	glDisableClientState( GL_TEXTURE_COORD_ARRAY );
 
 	globalImages->BindNull();
 
-  fhImmediateMode im;
+	fhImmediateMode im;
 	for ( i = 0 ; i < numDrawSurfs ; i++ ) {
 		drawSurf = drawSurfs[i];
 
@@ -1439,14 +1409,13 @@ static void RB_ShowDominantTris( drawSurf_t **drawSurfs, int numDrawSurfs ) {
 	}
 
 	GL_State( GLS_DEPTHFUNC_LESS );
-	glDisableClientState( GL_TEXTURE_COORD_ARRAY );
 
 	glPolygonOffset( -1, -2 );
 	glEnable( GL_POLYGON_OFFSET_LINE );
 
 	globalImages->BindNull();
 
-  fhImmediateMode im;
+	fhImmediateMode im;
 
 	for ( i = 0 ; i < numDrawSurfs ; i++ ) {
 		drawSurf = drawSurfs[i];
@@ -1504,12 +1473,11 @@ static void RB_ShowEdges( drawSurf_t **drawSurfs, int numDrawSurfs ) {
 	}
 
 	GL_State( GLS_DEFAULT );
-	glDisableClientState( GL_TEXTURE_COORD_ARRAY );
 
 	globalImages->BindNull();
 	glDisable( GL_DEPTH_TEST );
 
-  fhImmediateMode im;
+	fhImmediateMode im;
 
 	for ( i = 0 ; i < numDrawSurfs ; i++ ) {
 		drawSurf = drawSurfs[i];
@@ -1606,9 +1574,8 @@ void RB_ShowLights2( void ) {
 	fhRenderProgram::SetColorModulate(idVec4::zero);
 	fhRenderProgram::SetModelViewMatrix(GL_ModelViewMatrix.Top());
 	fhRenderProgram::SetProjectionMatrix(GL_ProjectionMatrix.Top());
-	GL_SelectTexture( 1 );
-	globalImages->whiteImage->Bind();
-	GL_SelectTexture( 0 );
+
+	globalImages->whiteImage->Bind(1);
 
 
 	for (const viewLight_t* vLight = backEnd.viewDef->viewLights; vLight; vLight = vLight->next) {
@@ -1701,9 +1668,7 @@ void RB_ShowLights( void ) {
 	fhRenderProgram::SetColorModulate(idVec4::zero);	
 	fhRenderProgram::SetModelViewMatrix(GL_ModelViewMatrix.Top());
 	fhRenderProgram::SetProjectionMatrix(GL_ProjectionMatrix.Top());
-	GL_SelectTexture(1);
-	globalImages->whiteImage->Bind();
-	GL_SelectTexture(0);
+	globalImages->whiteImage->Bind(1);
 
 	count = 0;
 	for ( vLight = backEnd.viewDef->viewLights ; vLight ; vLight = vLight->next ) {
@@ -1981,7 +1946,8 @@ void RB_ShowDebugText( void ) {
 
 	// draw lines
 	GL_State( GLS_POLYMODE_LINE );
-	glLineWidth( width );
+	//TODO(johl): linewidth>1 is deprecated. WTF?
+	glLineWidth( 1 /*width*/ );
 
 	if ( !r_debugLineDepthTest.GetBool() ) {
 		glDisable( GL_DEPTH_TEST );
@@ -2087,7 +2053,9 @@ void RB_ShowDebugLines( void ) {
 
 	// draw lines
 	GL_State( GLS_POLYMODE_LINE );//| GLS_DEPTHMASK ); //| GLS_SRCBLEND_ONE | GLS_DSTBLEND_ONE );
-	glLineWidth( width );
+
+	//TODO(johl): linewidth>1 is deprecated. WTF?
+	glLineWidth( 1 /*width*/ );
 
 	if ( !r_debugLineDepthTest.GetBool() ) {
 		glDisable( GL_DEPTH_TEST );
@@ -2310,19 +2278,15 @@ void RB_TestGamma( void ) {
 		}
 	}
 	
-  GL_ModelViewMatrix.LoadIdentity();
-  GL_ProjectionMatrix.Push();
-  GL_ProjectionMatrix.LoadIdentity();
-	GL_State( GLS_DEPTHFUNC_ALWAYS );
-	glColor3f( 1, 1, 1 );
-	glDisable( GL_TEXTURE_2D );
-  GL_ProjectionMatrix.Ortho(0, 1, 0, 1, -1, 1);
+	GL_ModelViewMatrix.LoadIdentity();
+	GL_ProjectionMatrix.Push();
+	GL_ProjectionMatrix.LoadIdentity();
+	GL_State( GLS_DEPTHFUNC_ALWAYS );		
+	GL_ProjectionMatrix.Ortho(0, 1, 0, 1, -1, 1);
 	glRasterPos2f( 0.01f, 0.01f );
 	glDrawPixels( G_WIDTH, G_HEIGHT, GL_RGBA, GL_UNSIGNED_BYTE, image );
 
-  GL_ProjectionMatrix.Pop();
-	
-	glEnable( GL_TEXTURE_2D );	
+	GL_ProjectionMatrix.Pop();
 }
 
 
@@ -2359,18 +2323,15 @@ static void RB_TestGammaBias( void ) {
 		}
 	}
 
-  GL_ModelViewMatrix.LoadIdentity();
+	GL_ModelViewMatrix.LoadIdentity();
 
-  GL_ProjectionMatrix.Push();
-  GL_ProjectionMatrix.LoadIdentity();
-	GL_State( GLS_DEPTHFUNC_ALWAYS );
-	glColor3f( 1, 1, 1 );
-	glDisable( GL_TEXTURE_2D );
-  GL_ProjectionMatrix.Ortho(0, 1, 0, 1, -1, 1);
+	GL_ProjectionMatrix.Push();
+	GL_ProjectionMatrix.LoadIdentity();
+	GL_State( GLS_DEPTHFUNC_ALWAYS );	
+	GL_ProjectionMatrix.Ortho(0, 1, 0, 1, -1, 1);
 	glRasterPos2f( 0.01f, 0.01f );
 	glDrawPixels( G_WIDTH, G_HEIGHT, GL_RGBA, GL_UNSIGNED_BYTE, image );
 	GL_ProjectionMatrix.Pop();
-	glEnable( GL_TEXTURE_2D );	
 }
 
 /*
@@ -2395,7 +2356,7 @@ void RB_TestImage( void ) {
 
 		cin = tr.testVideo->ImageForTime( (int)(1000 * ( backEnd.viewDef->floatTime - tr.testVideoStartTime ) ) );
 		if ( cin.image ) {
-			image->UploadScratch( cin.image, cin.imageWidth, cin.imageHeight );
+			image->UploadScratch( 0, cin.image, cin.imageWidth, cin.imageHeight );
 		} else {
 			tr.testImage = NULL;
 			return;
@@ -2411,16 +2372,16 @@ void RB_TestImage( void ) {
 		w *= (float)glConfig.vidHeight / glConfig.vidWidth;
 	}
 
-  GL_ModelViewMatrix.LoadIdentity();	
+	GL_ModelViewMatrix.LoadIdentity();	
 	GL_State( GLS_DEPTHFUNC_ALWAYS | GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA );
-  GL_ProjectionMatrix.Push();
-  GL_ProjectionMatrix.LoadIdentity();  
+	GL_ProjectionMatrix.Push();
+	GL_ProjectionMatrix.LoadIdentity();  
 	
 	GL_ProjectionMatrix.Ortho( 0, 1, 0, 1, -1, 1 );
   
-  fhImmediateMode im;
-  im.SetTexture(tr.testImage);
-  im.Color3f(1,1,1);
+	fhImmediateMode im;
+	im.SetTexture( tr.testImage );
+	im.Color3f( 1, 1, 1 );
 	im.Begin( GL_QUADS );
 	
 	im.TexCoord2f( 0, 1 );

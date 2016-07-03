@@ -36,10 +36,6 @@ If you have questions concerning this license or the applicable additional terms
 
 #define GAME_NAME						"fhDOOM"		// appears on window titles and errors
 
-#ifndef ENGINE_VERSION
-#define ENGINE_VERSION					"fhDOOM 1.5.0 (alpha)"	// printed in console
-#endif
-
 // paths
 #define	CD_BASEDIR						"Doom"
 #define	CD_CODEDIR    				"neo"

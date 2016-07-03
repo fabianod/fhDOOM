@@ -171,10 +171,7 @@ public:
 	bool					generateAllInteractionsCalled;
 
 	//-----------------------
-	// RenderWorld_load.cpp
-
-	idRenderModel *			ParseModel( idLexer *src );
-	idRenderModel *			ParseShadowModel( idLexer *src );
+	// RenderWorld_load.cpp	
 	void					SetupAreaRefs();
 	void					ParseInterAreaPortals( idLexer *src );
 	void					ParseNodes( idLexer *src );
@@ -186,6 +183,8 @@ public:
 	void					AddWorldModelEntities();
 	void					ClearPortalStates();
 	virtual	bool			InitFromMap( const char *mapName );
+	bool                    LoadProc( const char* mapName );
+	bool                    LoadOcl( const char* mapName );
 
 	//--------------------------
 	// RenderWorld_portals.cpp

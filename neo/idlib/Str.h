@@ -263,6 +263,7 @@ public:
 	static bool			CharIsNumeric( int c );
 	static bool			CharIsNewLine( char c );
 	static bool			CharIsTab( char c );
+	static bool			CharIsWhitespace( char c );
 	static int			ColorIndex( int c );
 	static idVec4 &		ColorForIndex( int i );
 
@@ -1005,6 +1006,11 @@ ID_INLINE bool idStr::CharIsNewLine( char c ) {
 ID_INLINE bool idStr::CharIsTab( char c ) {
 	return ( c == '\t' );
 }
+
+ID_INLINE bool idStr::CharIsWhitespace( char c ) {
+	return (c == '\t') || (c == ' ');
+}
+
 
 ID_INLINE int idStr::ColorIndex( int c ) {
 	return ( c & 15 );

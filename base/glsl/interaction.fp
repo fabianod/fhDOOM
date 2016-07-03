@@ -1,5 +1,4 @@
 #include "global.inc"
-#include "shadows.inc"
 #include "shading.inc"
 
 layout(binding = 1) uniform sampler2D normalMap;
@@ -19,8 +18,12 @@ in vs_output
   vec3 V;
   vec3 H;
   vec4 shadow[6];
-  vec3 toGlobalLightOrigin;  
+  vec3 toLightOrigin; 
+  float depth; 
+  vec4 worldspacePosition;
 } frag;
+
+#include "shadows.inc"
 
 out vec4 result;
 
@@ -42,21 +45,37 @@ vec4 specular(vec2 texcoord, vec3 N, vec3 L, vec3 V)
   return spec;
 }
 
-float shadow()
+vec4 shadow()
 {
-  float shadowness = 0;
+  vec4 shadowness = vec4(1,1,1,1);
+
+
 
   if(rpShadowMappingMode == 1)  
-    shadowness = pointlightShadow(frag.shadow, frag.toGlobalLightOrigin);  
+  {
+#if 1
+    float softness = (0.003 * rpShadowParams.x);
+#else
+    float lightDistance = length(frag.toLightOrigin); 
+    float softness = (0.009 * rpShadowParams.x) * (1-lightDistance/rpShadowParams.w); 
+#endif      
+    shadowness = pointlightShadow(frag.shadow, frag.toLightOrigin, vec2(softness, softness));  
+  }
   else if(rpShadowMappingMode == 2)
-    shadowness = projectedShadow(frag.shadow[0]); 
-
-  return mix(1, rpShadowParams.y, shadowness);  
+  {
+    float softness = (0.007 * rpShadowParams.x);
+    shadowness = projectedShadow(frag.shadow[0], vec2(softness, softness)); 
+  }
+  else if(rpShadowMappingMode == 3)
+  {
+    shadowness = parallelShadow(frag.shadow, -frag.depth, vec2(rpShadowParams.x * 0.0095, rpShadowParams.x * 0.0095));     
+  }
+ 
+  return shadowness;
 }
 
 void main(void)
 {  
-
   vec3 V = normalize(frag.V);
   vec3 L = normalize(frag.L);  
   vec2 offset = parallaxOffset(specularMap, frag.texSpecular.st, V);      
@@ -64,15 +83,11 @@ void main(void)
 
   result = vec4(0,0,0,0);
 
-  result += diffuse(frag.texDiffuse + offset, N, L);
-  
+  result += diffuse(frag.texDiffuse + offset, N, L);  
   result += specular(frag.texSpecular + offset, N, L, V);
 
   result *= frag.color;
-
   result *= texture2DProj(lightTexture, frag.texLight.xyw);
   result *= texture2D(lightFalloff, vec2(frag.texLight.z, 0.5));
   result *= shadow();
-
-
 }

@@ -181,6 +181,22 @@ int Sys_Milliseconds( void ) {
 	return curtime;
 }
 
+uint64 Sys_Microseconds( void ) {
+	int curtime;
+	struct timeval tp;
+
+	gettimeofday(&tp, NULL);
+
+	if (!sys_timeBase) {
+		sys_timeBase = tp.tv_sec;
+		return tp.tv_usec;
+	}
+
+	curtime = uint64(tp.tv_sec - sys_timeBase) * 1000000 + tp.tv_usec;
+
+	return curtime;
+}
+
 /*
 ================
 Sys_Mkdir

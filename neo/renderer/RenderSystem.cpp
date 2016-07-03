@@ -29,6 +29,7 @@ If you have questions concerning this license or the applicable additional terms
 #pragma hdrstop
 
 #include "tr_local.h"
+#include "RenderList.h"
 
 idRenderSystemLocal	tr;
 idRenderSystem	*renderSystem = &tr;
@@ -113,12 +114,9 @@ static void R_PerformanceCounters( void ) {
 		common->Printf( "lightScale: %f\n", backEnd.pc.maxLightValue );
 	}
 
-	if (r_showShadowPasses.GetBool()) {
-		common->Printf("shadow passes: %i,  draw calls: %i\n", backEnd.pc.c_shadowPasses, backEnd.pc.c_shadowMapDraws);
-	}
-
 	memset( &tr.pc, 0, sizeof( tr.pc ) );
 	memset( &backEnd.pc, 0, sizeof( backEnd.pc ) );
+	memset( &backEnd.stats, 0, sizeof( backEnd.stats ) );
 }
 
 
@@ -721,6 +719,9 @@ void idRenderSystemLocal::EndFrame( int *frontEndMsec, int *backEndMsec ) {
 	// we can now release the vertexes used this frame
 	vertexCache.EndFrame();
 
+	// release all memory allocated for render lists
+	fhBaseRenderList::EndFrame();
+
 	if ( session->writeDemo ) {
 		session->writeDemo->WriteInt( DS_RENDER );
 		session->writeDemo->WriteInt( DC_END_FRAME );
@@ -1009,7 +1010,16 @@ bool idRenderSystemLocal::UploadImage( const char *imageName, const byte *data, 
 	if ( !image ) {
 		return false;
 	}
-	image->UploadScratch( data, width, height );
+	image->UploadScratch( 0, data, width, height );
 	image->SetImageFilterAndRepeat();
 	return true;
+}
+
+/*
+===============
+idRenderSystemLocal::GetBackEndStats
+===============
+*/
+backEndStats_t idRenderSystemLocal::GetBackEndStats() const {
+	return backEnd.stats;
 }

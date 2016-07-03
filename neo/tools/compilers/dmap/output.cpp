@@ -34,6 +34,8 @@ If you have questions concerning this license or the applicable additional terms
 //=================================================================================
 
 
+void Tris_ToOBJ(idTriList *tris, idMatList *mats, idFile* objFile, idFile* mtlFile);
+
 #if 0
 
 should we try and snap values very close to 0.5, 0.25, 0.125, etc?
@@ -46,8 +48,6 @@ resolved: normals.  otherwise adjacent facet shaded surfaces get their
 
 
 #endif
-
-static	idFile	*procFile;
 
 #define	AREANUM_DIFFERENT	-2
 /*
@@ -257,15 +257,15 @@ static void CleanupUTriangles( srfTriangles_t *tri ) {
 ====================
 WriteUTriangles
 
-Writes text verts and indexes to procfile
+Writes text verts and indexes to file
 ====================
 */
-static void WriteUTriangles( const srfTriangles_t *uTris ) {
+static void WriteUTriangles( idFile* f, const srfTriangles_t *uTris ) {
 	int			col;
 	int			i;
 
 	// emit this chain
-	procFile->WriteFloatString( "/* numVerts = */ %i /* numIndexes = */ %i\n", 
+	f->WriteFloatString( "/* numVerts = */ %i /* numIndexes = */ %i\n", 
 		uTris->numVerts, uTris->numIndexes );
 
 	// verts
@@ -284,29 +284,87 @@ static void WriteUTriangles( const srfTriangles_t *uTris ) {
 		vec[5] = dv->normal[0];
 		vec[6] = dv->normal[1];
 		vec[7] = dv->normal[2];
-		Write1DMatrix( procFile, 8, vec );
+		Write1DMatrix( f, 8, vec );
 
 		if ( ++col == 3 ) {
 			col = 0;
-			procFile->WriteFloatString( "\n" );
+			f->WriteFloatString( "\n" );
 		}
 	}
 	if ( col != 0 ) {
-		procFile->WriteFloatString( "\n" );
+		f->WriteFloatString( "\n" );
 	}
 
 	// indexes
 	col = 0;
 	for ( i = 0 ; i < uTris->numIndexes ; i++ ) {
-		procFile->WriteFloatString( "%i ", uTris->indexes[i] );
+		f->WriteFloatString( "%i ", uTris->indexes[i] );
 
 		if ( ++col == 18 ) {
 			col = 0;
-			procFile->WriteFloatString( "\n" );
+			f->WriteFloatString( "\n" );
 		}
 	}
 	if ( col != 0 ) {
-		procFile->WriteFloatString( "\n" );
+		f->WriteFloatString( "\n" );
+	}
+}
+
+/*
+====================
+WriteOccluderTriangles
+
+Writes text verts and indexes to file
+====================
+*/
+static void WriteOccluderTriangles( idFile* f, const srfTriangles_t *uTris, bool excludeTextureCoordinates ) {
+	int			col;
+
+	// emit this chain
+	f->WriteFloatString( "/* numVerts = */ %i /* numIndexes = */ %i /* no texcoords = */ %i \n",
+		uTris->numVerts, uTris->numIndexes, (excludeTextureCoordinates ? 1 : 0) );
+
+	// verts
+	col = 0;
+	for (int i = 0; i < uTris->numVerts; i++) {
+		float	vec[5];
+		const idDrawVert *dv;
+
+		dv = &uTris->verts[i];
+
+		vec[0] = dv->xyz[0];
+		vec[1] = dv->xyz[1];
+		vec[2] = dv->xyz[2];
+		vec[3] = dv->st[0];
+		vec[4] = dv->st[1];
+
+		if(!excludeTextureCoordinates) {
+			Write1DMatrix( f, 5, vec );
+		} else {
+			Write1DMatrix( f, 3, vec );
+		}
+
+		if (++col == 3) {
+			col = 0;
+			f->WriteFloatString( "\n" );
+		}
+	}
+	if (col != 0) {
+		f->WriteFloatString( "\n" );
+	}
+
+	// indexes
+	col = 0;
+	for (int i = 0; i < uTris->numIndexes; i++) {
+		f->WriteFloatString( "%i ", uTris->indexes[i] );
+
+		if (++col == 18) {
+			col = 0;
+			f->WriteFloatString( "\n" );
+		}
+	}
+	if (col != 0) {
+		f->WriteFloatString( "\n" );
 	}
 }
 
@@ -315,43 +373,43 @@ static void WriteUTriangles( const srfTriangles_t *uTris ) {
 ====================
 WriteShadowTriangles
 
-Writes text verts and indexes to procfile
+Writes text verts and indexes to file
 ====================
 */
-static void WriteShadowTriangles( const srfTriangles_t *tri ) {
+static void WriteShadowTriangles( idFile* f, const srfTriangles_t *tri ) {
 	int			col;
 	int			i;
 
 	// emit this chain
-	procFile->WriteFloatString( "/* numVerts = */ %i /* noCaps = */ %i /* noFrontCaps = */ %i /* numIndexes = */ %i /* planeBits = */ %i\n", 
+	f->WriteFloatString( "/* numVerts = */ %i /* noCaps = */ %i /* noFrontCaps = */ %i /* numIndexes = */ %i /* planeBits = */ %i\n", 
 		tri->numVerts, tri->numShadowIndexesNoCaps, tri->numShadowIndexesNoFrontCaps, tri->numIndexes, tri->shadowCapPlaneBits );
 
 	// verts
 	col = 0;
 	for ( i = 0 ; i < tri->numVerts ; i++ ) {
-		Write1DMatrix( procFile, 3, &tri->shadowVertexes[i].xyz[0] );
+		Write1DMatrix( f, 3, &tri->shadowVertexes[i].xyz[0] );
 
 		if ( ++col == 5 ) {
 			col = 0;
-			procFile->WriteFloatString( "\n" );
+			f->WriteFloatString( "\n" );
 		}
 	}
 	if ( col != 0 ) {
-		procFile->WriteFloatString( "\n" );
+		f->WriteFloatString( "\n" );
 	}
 
 	// indexes
 	col = 0;
 	for ( i = 0 ; i < tri->numIndexes ; i++ ) {
-		procFile->WriteFloatString( "%i ", tri->indexes[i] );
+		f->WriteFloatString( "%i ", tri->indexes[i] );
 
 		if ( ++col == 18 ) {
 			col = 0;
-			procFile->WriteFloatString( "\n" );
+			f->WriteFloatString( "\n" );
 		}
 	}
 	if ( col != 0 ) {
-		procFile->WriteFloatString( "\n" );
+		f->WriteFloatString( "\n" );
 	}
 }
 
@@ -379,34 +437,22 @@ static bool GroupsAreSurfaceCompatible( const optimizeGroup_t *a, const optimize
 WriteOutputSurfaces
 ====================
 */
-static void WriteOutputSurfaces( int entityNum, int areaNum ) {
-	mapTri_t	*ambient, *copy;
-	int			surfaceNum;
-	int			numSurfaces;
-	idMapEntity	*entity;
-	uArea_t		*area;
-	optimizeGroup_t	*group, *groupStep;
-	int			i; // , j;
-//	int			col;
-	srfTriangles_t	*uTri;
-//	mapTri_t	*tri;
-typedef struct interactionTris_s {
-	struct interactionTris_s	*next;
-	mapTri_t	*triList;
-	mapLight_t	*light;
-} interactionTris_t;
+static void WriteOutputSurfaces( idFile* f, int entityNum, int areaNum ) {
+	
+	struct interactionTris_t {
+		interactionTris_t *next;
+		mapTri_t	*triList;
+		mapLight_t	*light;
+	};
 
-	interactionTris_t	*interactions, *checkInter; //, *nextInter;
+	uArea_t* area = &dmapGlobals.uEntities[entityNum].areas[areaNum];
+	idMapEntity* entity = dmapGlobals.uEntities[entityNum].mapEntity;
 
-
-	area = &dmapGlobals.uEntities[entityNum].areas[areaNum];
-	entity = dmapGlobals.uEntities[entityNum].mapEntity;
-
-	numSurfaces = CountUniqueShaders( area->groups );
+	int numSurfaces = CountUniqueShaders( area->groups );
 
 
 	if ( entityNum == 0 ) {
-		procFile->WriteFloatString( "model { /* name = */ \"_area%i\" /* numSurfaces = */ %i\n\n", 
+		f->WriteFloatString( "model { /* name = */ \"_area%i\" /* numSurfaces = */ %i\n\n", 
 			areaNum, numSurfaces );
 	} else {
 		const char *name;
@@ -415,12 +461,12 @@ typedef struct interactionTris_s {
 		if ( !name[0] ) {
 			common->Error( "Entity %i has surfaces, but no name key", entityNum );
 		}
-		procFile->WriteFloatString( "model { /* name = */ \"%s\" /* numSurfaces = */ %i\n\n", 
+		f->WriteFloatString( "model { /* name = */ \"%s\" /* numSurfaces = */ %i\n\n", 
 			name, numSurfaces );
 	}
 
-	surfaceNum = 0;
-	for ( group = area->groups ; group ; group = group->nextGroup ) {
+	int surfaceNum = 0;
+	for ( optimizeGroup_t* group = area->groups ; group ; group = group->nextGroup ) {
 		if ( group->surfaceEmited ) {
 			continue;
 		}
@@ -430,13 +476,13 @@ typedef struct interactionTris_s {
 		// surface, even though they couldn't be merged together to save
 		// vertexes because they had different planes, texture coordinates, or lights.
 		// Different mergeGroups will stay in separate surfaces.
-		ambient = NULL;
+		mapTri_t* ambient = NULL;
 
 		// each light that illuminates any of the groups in the surface will
 		// get its own list of indexes out of the original surface
-		interactions = NULL;
+		interactionTris_t* interactions = NULL;
 
-		for ( groupStep = group ; groupStep ; groupStep = groupStep->nextGroup ) {
+		for ( optimizeGroup_t* groupStep = group ; groupStep ; groupStep = groupStep->nextGroup ) {
 			if ( groupStep->surfaceEmited ) {
 				continue;
 			}
@@ -445,13 +491,14 @@ typedef struct interactionTris_s {
 			}
 
 			// copy it out to the ambient list
-			copy = CopyTriList( groupStep->triList );
+			mapTri_t* copy = CopyTriList( groupStep->triList );
 			ambient = MergeTriLists( ambient, copy );
 			groupStep->surfaceEmited = true;
 
 			// duplicate it into an interaction for each groupLight
-			for ( i = 0 ; i < groupStep->numGroupLights ; i++ ) {
-				for ( checkInter = interactions ; checkInter ; checkInter = checkInter->next ) {
+			for ( int i = 0 ; i < groupStep->numGroupLights ; i++ ) {
+				interactionTris_t* checkInter = nullptr;
+				for ( interactionTris_t* checkInter = interactions ; checkInter ; checkInter = checkInter->next ) {
 					if ( checkInter->light == groupStep->groupLights[i] ) {
 						break;
 					}
@@ -476,21 +523,21 @@ typedef struct interactionTris_s {
 			common->Error( "WriteOutputSurfaces: surfaceNum >= numSurfaces" );
 		}
 
-		procFile->WriteFloatString( "/* surface %i */ { ", surfaceNum );
+		f->WriteFloatString( "/* surface %i */ { ", surfaceNum );
 		surfaceNum++;
-		procFile->WriteFloatString( "\"%s\" ", ambient->material->GetName() );
+		f->WriteFloatString( "\"%s\" ", ambient->material->GetName() );
 
-		uTri = ShareMapTriVerts( ambient );
+		srfTriangles_t* uTri = ShareMapTriVerts( ambient );
 		FreeTriList( ambient );
 
 		CleanupUTriangles( uTri );
-		WriteUTriangles( uTri );
+		WriteUTriangles( f, uTri );
 		R_FreeStaticTriSurf( uTri );
 
-		procFile->WriteFloatString( "}\n\n" );
+		f->WriteFloatString( "}\n\n" );
 	}
 
-	procFile->WriteFloatString( "}\n\n" );
+	f->WriteFloatString( "}\n\n" );
 }
 
 /*
@@ -499,7 +546,7 @@ WriteNode_r
 
 ===============
 */
-static void WriteNode_r( node_t *node ) {
+static void WriteNode_r( idFile* f, node_t *node ) {
 	int		child[2];
 	int		i;
 	idPlane	*plane;
@@ -507,7 +554,7 @@ static void WriteNode_r( node_t *node ) {
 	if ( node->planenum == PLANENUM_LEAF ) {
 		// we shouldn't get here unless the entire world
 		// was a single leaf
-		procFile->WriteFloatString( "/* node 0 */ ( 0 0 0 0 ) -1 -1\n" );
+		f->WriteFloatString( "/* node 0 */ ( 0 0 0 0 ) -1 -1\n" );
 		return;
 	}
 
@@ -521,15 +568,15 @@ static void WriteNode_r( node_t *node ) {
 
 	plane = &dmapGlobals.mapPlanes[node->planenum];
 
-	procFile->WriteFloatString( "/* node %i */ ", node->nodeNumber  );
-	Write1DMatrix( procFile, 4, plane->ToFloatPtr() );
-	procFile->WriteFloatString( "%i %i\n", child[0], child[1] );
+	f->WriteFloatString( "/* node %i */ ", node->nodeNumber  );
+	Write1DMatrix( f, 4, plane->ToFloatPtr() );
+	f->WriteFloatString( "%i %i\n", child[0], child[1] );
 
 	if ( child[0] > 0 ) {
-		WriteNode_r( node->children[0] );
+		WriteNode_r( f, node->children[0] );
 	}
 	if ( child[1] > 0 ) {
-		WriteNode_r( node->children[1] );
+		WriteNode_r( f, node->children[1] );
 	}
 }
 
@@ -550,7 +597,7 @@ static int NumberNodes_r( node_t *node, int nextNumber ) {
 WriteOutputNodes
 ====================
 */
-static void WriteOutputNodes( node_t *node ) {
+static void WriteOutputNodes( idFile* f, node_t *node ) {
 	int		numNodes;
 
 	// prune unneeded nodes and count
@@ -558,14 +605,14 @@ static void WriteOutputNodes( node_t *node ) {
 	numNodes = NumberNodes_r( node, 0 );
 
 	// output
-	procFile->WriteFloatString( "nodes { /* numNodes = */ %i\n\n", numNodes );
-	procFile->WriteFloatString( "/* node format is: ( planeVector ) positiveChild negativeChild */\n" );
-	procFile->WriteFloatString( "/* a child number of 0 is an opaque, solid area */\n" );
-	procFile->WriteFloatString( "/* negative child numbers are areas: (-1-child) */\n" );
+	f->WriteFloatString( "nodes { /* numNodes = */ %i\n\n", numNodes );
+	f->WriteFloatString( "/* node format is: ( planeVector ) positiveChild negativeChild */\n" );
+	f->WriteFloatString( "/* a child number of 0 is an opaque, solid area */\n" );
+	f->WriteFloatString( "/* negative child numbers are areas: (-1-child) */\n" );
 
-	WriteNode_r( node );
+	WriteNode_r( f, node );
 
-	procFile->WriteFloatString( "}\n\n" );
+	f->WriteFloatString( "}\n\n" );
 }
 
 /*
@@ -573,25 +620,25 @@ static void WriteOutputNodes( node_t *node ) {
 WriteOutputPortals
 ====================
 */
-static void WriteOutputPortals( uEntity_t *e ) {
+static void WriteOutputPortals( idFile* f, uEntity_t *e ) {
 	int			i, j;
 	interAreaPortal_t	*iap;
 	idWinding			*w;
 
-	procFile->WriteFloatString( "interAreaPortals { /* numAreas = */ %i /* numIAP = */ %i\n\n", 
+	f->WriteFloatString( "interAreaPortals { /* numAreas = */ %i /* numIAP = */ %i\n\n", 
 		e->numAreas, numInterAreaPortals );
-	procFile->WriteFloatString( "/* interAreaPortal format is: numPoints positiveSideArea negativeSideArea ( point) ... */\n" );
+	f->WriteFloatString( "/* interAreaPortal format is: numPoints positiveSideArea negativeSideArea ( point) ... */\n" );
 	for ( i = 0 ; i < numInterAreaPortals ; i++ ) {
 		iap = &interAreaPortals[i];
 		w = iap->side->winding;
-		procFile->WriteFloatString("/* iap %i */ %i %i %i ", i, w->GetNumPoints(), iap->area0, iap->area1 );
+		f->WriteFloatString("/* iap %i */ %i %i %i ", i, w->GetNumPoints(), iap->area0, iap->area1 );
 		for ( j = 0 ; j < w->GetNumPoints() ; j++ ) {
-			Write1DMatrix( procFile, 3, (*w)[j].ToFloatPtr() );
+			Write1DMatrix( f, 3, (*w)[j].ToFloatPtr() );
 		}
-		procFile->WriteFloatString("\n" );
+		f->WriteFloatString("\n" );
 	}
 
-	procFile->WriteFloatString( "}\n\n" );
+	f->WriteFloatString( "}\n\n" );
 }
 
 
@@ -600,7 +647,7 @@ static void WriteOutputPortals( uEntity_t *e ) {
 WriteOutputEntity
 ====================
 */
-static void WriteOutputEntity( int entityNum ) {
+static void WriteOutputEntity( idFile* f, int entityNum ) {
 	int		i;
 	uEntity_t *e;
 
@@ -614,38 +661,36 @@ static void WriteOutputEntity( int entityNum ) {
 	}
 
 	for ( i = 0 ; i < e->numAreas ; i++ ) {
-		WriteOutputSurfaces( entityNum, i );
+		WriteOutputSurfaces( f, entityNum, i );
 	}
 
 	// we will completely skip the portals and nodes if it is a single area
 	if ( entityNum == 0 && e->numAreas > 1 ) {
 		// output the area portals
-		WriteOutputPortals( e );
+		WriteOutputPortals( f, e );
 
 		// output the nodes
-		WriteOutputNodes( e->tree->headnode );
+		WriteOutputNodes( f, e->tree->headnode );
 	}
 }
 
 
 /*
 ====================
-WriteOutputFile
+WriteProcFile
 ====================
 */
-void WriteOutputFile( void ) {
-	int				i;
-	uEntity_t		*entity;
+void WriteProcFile( void ) {
 	idStr			qpath;
 
 	// write the file
-	common->Printf( "----- WriteOutputFile -----\n" );
+	common->Printf( "----- WriteProcFile -----\n" );
 
 	sprintf( qpath, "%s." PROC_FILE_EXT, dmapGlobals.mapFileBase );
 
 	common->Printf( "writing %s\n", qpath.c_str() );
 	// _D3XP used fs_cdpath
-	procFile = fileSystem->OpenFileWrite( qpath, "fs_devpath" );
+	idFile* procFile = fileSystem->OpenFileWrite( qpath, "fs_devpath" );
 	if ( !procFile ) {
 		common->Error( "Error opening %s", qpath.c_str() );
 	}
@@ -653,25 +698,25 @@ void WriteOutputFile( void ) {
 	procFile->WriteFloatString( "%s\n\n", PROC_FILE_ID );
 
 	// write the entity models and information, writing entities first
-	for ( i=dmapGlobals.num_entities - 1 ; i >= 0 ; i-- ) {
-		entity = &dmapGlobals.uEntities[i];
+	for ( int i=dmapGlobals.num_entities - 1 ; i >= 0 ; i-- ) {
+		uEntity_t* entity = &dmapGlobals.uEntities[i];
 	
 		if ( !entity->primitives ) {
 			continue;
 		}
 
-		WriteOutputEntity( i );
+		WriteOutputEntity( procFile, i );
 	}
 
 	// write the shadow volumes
-	for ( i = 0 ; i < dmapGlobals.mapLights.Num() ; i++ ) {
+	for ( int i = 0 ; i < dmapGlobals.mapLights.Num() ; i++ ) {
 		mapLight_t	*light = dmapGlobals.mapLights[i];
 		if ( !light->shadowTris ) {
 			continue;
 		}
 
 		procFile->WriteFloatString( "shadowModel { /* name = */ \"_prelight_%s\"\n\n", light->name );
-		WriteShadowTriangles( light->shadowTris );
+		WriteShadowTriangles( procFile, light->shadowTris );
 		procFile->WriteFloatString( "}\n\n" );
 
 		R_FreeStaticTriSurf( light->shadowTris );
@@ -679,4 +724,92 @@ void WriteOutputFile( void ) {
 	}
 
 	fileSystem->CloseFile( procFile );
+}
+
+/*
+====================
+WriteProcFile
+====================
+*/
+void WriteOclFile( void ) {
+	idStr			qpath;
+
+	// write the file
+	common->Printf( "----- WriteOclFile -----\n" );
+
+	sprintf( qpath, "%s." OCL_FILE_EXT, dmapGlobals.mapFileBase );
+
+	common->Printf( "writing %s\n", qpath.c_str() );
+	// _D3XP used fs_cdpath
+	idFile* oclFile = fileSystem->OpenFileWrite( qpath, "fs_devpath" );
+	if (!oclFile) {
+		common->Error( "Error opening %s", qpath.c_str() );
+	}
+
+	oclFile->WriteFloatString( "%s\n\n", OCL_FILE_ID );
+
+
+	idTriList trilist;
+	idMatList matlist;
+
+	int lights = 0;
+	int surfaces = 0;
+	int vertices = 0;
+
+	// write the occluder geometry
+	for (int i = 0; i < dmapGlobals.mapLights.Num(); i++) {
+		mapLight_t	*light = dmapGlobals.mapLights[i];
+
+		trilist.Clear();	
+		matlist.Clear();
+
+		for(int j=0; j<128; ++j) {
+			if(light->occluders[j].tris && light->occluders[j].tris->numVerts > 0) {
+				trilist.Append(light->occluders[j].tris);
+				matlist.Append(light->occluders[j].material);
+			}
+		}
+
+		if(trilist.Num() <= 0)
+			continue;
+
+		lights += 1;
+		oclFile->WriteFloatString( "occluder { /* name = */ \"_occluder_%s\" /* numSurfaces = */ %i \n\n", light->name, trilist.Num() );
+
+		for(int j=0; j<trilist.Num(); ++j) {
+			const srfTriangles_t* tris = trilist[j];
+
+			surfaces += 1;
+			vertices += tris->numVerts;
+			oclFile->WriteFloatString( "/* surface %d */ { \"%s\" ", j, matlist[j]->GetName());
+
+			WriteOccluderTriangles( oclFile, tris, matlist[j]->Coverage() != MC_PERFORATED );		
+
+			oclFile->WriteFloatString( "}\n\n" );
+		}		
+
+//FIXME(johl): Tris_ToOBJ is currently part of MFC editor code, thus not available on linux. Tris_ToOBJ could be moved into compilers?
+#ifdef WIN32
+		if(dmapGlobals.exportObj) {
+			idStr objPath;
+			sprintf( objPath, "%s/%s.obj", dmapGlobals.mapFileBase, light->name );
+			idFile* objFile = fileSystem->OpenFileWrite( objPath, "fs_devpath" );
+			Tris_ToOBJ( &trilist, &matlist, objFile, nullptr );
+
+			fileSystem->CloseFile( objFile );
+		}
+#endif
+		oclFile->WriteFloatString( "}\n\n" );
+
+		for (int j = 0; j < 128; ++j) {
+			if (light->occluders[j].tris) {
+				R_FreeStaticTriSurf( light->occluders[j].tris );
+				light->occluders[j].tris = nullptr;
+			}
+		}		
+	}
+
+	fileSystem->CloseFile( oclFile );
+
+	common->Printf( "occluder stats: %d lights, %d surfaces, %d vertices\n", lights, surfaces, vertices );
 }

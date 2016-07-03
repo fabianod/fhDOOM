@@ -2,18 +2,10 @@
 
 layout(location = 0) in vec3 vertex_position;
 layout(location = 1) in vec2 vertex_texcoord;
-layout(location = 2) in vec3 vertex_normal;
-layout(location = 3) in vec4 vertex_color;
-layout(location = 4) in vec3 vertex_binormal;
-layout(location = 5) in vec3 vertex_tangent;
 
 out vs_output
 {
   vec2 texcoord;
-  vec3 normal;
-  vec3 binormal;
-  vec3 tangent;
-  vec4 color;
 } result;
 
 void main(void)
@@ -23,9 +15,4 @@ void main(void)
   vec4 vertex_texcoord4 = vec4(vertex_texcoord, 1.0, 1.0);
   result.texcoord.x = dot(rpDiffuseMatrixS, vertex_texcoord4);
   result.texcoord.y = dot(rpDiffuseMatrixT, vertex_texcoord4);
-
-  result.normal = vertex_normal;
-  result.binormal = vertex_binormal;
-  result.tangent = vertex_tangent;
-  result.color = vertex_color;
 }

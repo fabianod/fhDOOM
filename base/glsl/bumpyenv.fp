@@ -1,6 +1,6 @@
 #include "global.inc"
 
-layout(binding = 1) uniform samplerCube cubemap1;
+layout(binding = 1) uniform samplerCube texture1;
 layout(binding = 2) uniform sampler2D texture2;
 
 in vs_output
@@ -32,5 +32,5 @@ void main(void)
   mat3 TBN = mat3(tangent, binormal, normal);  
 
   vec3 r = reflect(frag.cubecoord, TBN * localNormal);
-  result = texture(cubemap1, r) * frag.color * rpDiffuseColor;
+  result = texture(texture1, r) * frag.color * rpDiffuseColor;
 }

@@ -252,7 +252,7 @@ singleselect:
 		if (e->eclass) {
 			g_Inspectors->UpdateEntitySel(brush->owner->eclass);
 			if ( radiant_entityMode.GetBool() && e->eclass->nShowFlags & (ECLASS_LIGHT | ECLASS_SPEAKER) ) {
-				const char *p = ValueForKey(e, "s_shader");
+				const char *p = e->ValueForKey("s_shader");
 				if (p && *p) {
 					g_Inspectors->mediaDlg.SelectCurrentItem(true, p, CDialogTextures::SOUNDS);
 				}
@@ -561,7 +561,7 @@ void WINAPI Select_SetTexture(texdef_t *texdef,brushprimit_texdef_t	*brushprimit
 				Undo_EndBrush(b);
 			} else if (b->owner->eclass->nShowFlags & ECLASS_LIGHT) {
 				if ( idStr::Cmpn(texdef->name, "lights/", strlen("lights/")) == 0 ) {
-					SetKeyValue(b->owner, "texture", texdef->name);
+					b->owner->SetKeyValue("texture", texdef->name);
 					g_Inspectors->UpdateEntitySel(b->owner->eclass);
 					UpdateLightInspector();
 					Brush_Build(b);
@@ -764,11 +764,11 @@ void Select_ApplyMatrix(bool bSnap, bool rotateOrigins) {
 				if (rotateOrigins) {
 					b->owner->rotation *= select_matrix;
 					b->owner->origin *= select_rotation;
-					SetKeyVec3(b->owner, "origin", b->owner->origin);
+					b->owner->SetKeyVec3("origin", b->owner->origin);
 					if (b->trackLightOrigin) {
 						b->owner->lightRotation *= select_matrix;
 						b->owner->lightOrigin *= select_rotation;
-						SetKeyVec3(b->owner, "light_origin", b->owner->lightOrigin);
+						b->owner->SetKeyVec3("light_origin", b->owner->lightOrigin);
 					}
 				} else {
 
@@ -819,7 +819,7 @@ void Select_ApplyMatrix(bool bSnap, bool rotateOrigins) {
 				b->owner->origin += select_origin;
 				sprintf(text, "%i %i %i", (int)b->owner->origin[0], (int)b->owner->origin[1], (int)b->owner->origin[2]);
 
-				SetKeyValue(b->owner, "origin", text);
+				b->owner->SetKeyValue("origin", text);
 			}
 			
 		   
@@ -828,17 +828,17 @@ void Select_ApplyMatrix(bool bSnap, bool rotateOrigins) {
 				sprintf(str, "%g %g %g %g %g %g %g %g %g",b->owner->rotation[0][0],b->owner->rotation[0][1],b->owner->rotation[0][2],
 						b->owner->rotation[1][0],b->owner->rotation[1][1],b->owner->rotation[1][2],b->owner->rotation[2][0],
 						b->owner->rotation[2][1],b->owner->rotation[2][2]);
-				SetKeyValue(b->owner, "rotation", str);
+				b->owner->SetKeyValue("rotation", str);
 			}
 			
 			if (b->trackLightOrigin) {
 				sprintf(str, "%g %g %g %g %g %g %g %g %g",b->owner->lightRotation[0][0],b->owner->lightRotation[0][1],b->owner->lightRotation[0][2],
 						b->owner->lightRotation[1][0],b->owner->lightRotation[1][1],b->owner->lightRotation[1][2],b->owner->lightRotation[2][0],
 						b->owner->lightRotation[2][1],b->owner->lightRotation[2][2]);
-				SetKeyValue(b->owner, "light_rotation", str);
+				b->owner->SetKeyValue("light_rotation", str);
 			}
-			DeleteKey(b->owner, "angle");
-			DeleteKey(b->owner, "angles");
+			b->owner->DeleteKey("angle");
+			b->owner->DeleteKey("angles");
 		}
 
 		if (doBrush) {
@@ -1483,7 +1483,7 @@ void Select_Ungroup() {
 			b->owner = world_entity;
 		}
 
-		Entity_Free(e);
+		delete e;
 		numselectedgroups++;
 	}
 
@@ -1776,7 +1776,7 @@ void Select_AllOfType() {
 					if ( idStr::Icmp(e->eclass->name, strName) == 0 ) {
 						bool	doIt = true;
 						if (bCriteria) {
-							CString str = ValueForKey(e, strKey);
+							CString str = e->ValueForKey(strKey);
 							if (str.CompareNoCase(strVal) != 0) {
 								doIt = false;
 							}
@@ -1967,7 +1967,7 @@ void Select_CenterOrigin() {
 		if (e != world_entity) {
 			char	text[1024];
 			sprintf(text, "%i %i %i", (int)mid[0], (int)mid[1], (int)mid[2]);
-			SetKeyValue(e, "origin", text);
+			e->SetKeyValue("origin", text);
 			VectorCopy(mid, e->origin);
 		}
 	}
@@ -2062,7 +2062,7 @@ void Select_UpdateTextureName(const char *name) {
 				Undo_EndBrush(b);
 			} else if (b->owner->eclass->nShowFlags & ECLASS_LIGHT) {
 				if ( idStr::Cmpn(name, "lights/", strlen("lights/")) == 0 ) {
-					SetKeyValue(b->owner, "texture", name);
+					b->owner->SetKeyValue("texture", name);
 					g_Inspectors->UpdateEntitySel(b->owner->eclass);
 					UpdateLightInspector();
 					Brush_Build(b);
@@ -2118,7 +2118,7 @@ void Select_FlipTexture(bool y) {
 void Select_SetKeyVal(const char *key, const char *val) {
 	for (brush_t * b = selected_brushes.next; b && b != &selected_brushes; b = b->next) {
 		if (b->owner != world_entity) {
-			SetKeyValue(b->owner, key, val, false);
+			b->owner->SetKeyValue(key, val, false);
 		}
 	}
 }

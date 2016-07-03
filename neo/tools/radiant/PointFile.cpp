@@ -130,7 +130,8 @@ void Pointfile_Draw( void )
   if(s_num_points <= 0)
     return;
 
-  glLineWidth (2);
+  //TODO(johl): linewidth>1 is deprecated. WTF?
+  glLineWidth ( 1 /*2*/ );
   fhImmediateMode im;
   im.Color3f(1,0,0);
   im.Begin(GL_LINE_STRIP);

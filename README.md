@@ -2,7 +2,7 @@
 
 ## About
 
-fhDOOM is one of my little side projects. I am working on this because its fun and a great learning experience. Its interesting to explore the code and to test out how such an old game can be improved by new features and more modern techniques. I have no plans to develop a real game or something like that with it. Using Unity, Cry Engine or Unreal Engine might be a better choice for that anyways.
+fhDOOM is one of my little side projects. I am working on this because its fun and a great learning experience. Its interesting to explore the code and to test out how such an old game can be improved by new features and more modern techniques. I have no plans to make a real game or something like that with it. Using Unity, Cry Engine or Unreal Engine might be a better choice for that anyways.
 
 ### Goals
   * Keep it easy to build
@@ -10,9 +10,9 @@ fhDOOM is one of my little side projects. I am working on this because its fun a
     * compiles with modern compilers
     * minimal dependencies
   * Keep the original game working, all of it!
-    * The game itself
-    * The expansion pack Resurrection of Evil
-    * The Tools
+    * the game itself
+    * the expansion pack Resurrection of Evil
+    * the tools
   * Stay true to the original game. Enhancements are fine, as long as they don't look out of place or destroy the mood of the game.
   * Support for Windows and Linux
 
@@ -23,6 +23,9 @@ fhDOOM is one of my little side projects. I am working on this because its fun a
  * dhewm3: https://github.com/dhewm/dhewm3
  * RBDOOM-3-BFG (based on DOOM-3-BFG): https://github.com/RobertBeckebans/RBDOOM-3-BFG
  * Dark Mod (total conversion, not sure if it can still run the original DOOM3 game): http://www.thedarkmod.com/
+ * https://github.com/raynorpat/Doom3
+ * https://github.com/revelator/Revelation
+ * https://github.com/motorsep/StormEngine2
 
 ## Changes
  * CMake build system
@@ -30,16 +33,23 @@ fhDOOM is one of my little side projects. I am working on this because its fun a
  * Replaced deprecated DirectX SDK by Windows 8.1 SDK 
  * Use GLEW for OpenGL extension handling (replaced all qgl\* calls by normal gl\* calls)
  * Contains all game assets from latest official patch 1.31
- * OpenGL 4.3 core profile  
+ * OpenGL 3.3 core profile  
   * Fixed function and ARB2 assembly shaders are completely gone
   * Re-wrote everything with GLSL  
-  * Game and Tools!
+  * Game and tools
  * Soft shadows via shadow mapping
   * Alpha-tested surfaces can cast shadows 
   * Configurable globally as a default (useful for original maps) and for each light individually
     * Softness
     * Brightness
   * Shadow mapping and Stencil Shadows can be freely mixed
+  * Poisson sampling
+  * parallel/directional lights use cascade shadow mapping
+ * modified 'dmap' compiler to generate optimized occlusion geometry for shadow map rendering (soft shadows)
+  * occlusion geometry is stored in a separate *.ocl file (*.map and *.proc are still the same)
+  * ocl file optional, maps without ocl file work just fine (at the expense of performance)
+  * dmap option 'exportObj' will export occlusion geometry to obj files
+  * fhDOOM includes ocl files for all maps of the original game  
  * Soft particles
  * Parallax occlusion mapping (expects height data in the alpha channel of the specular map)
  * Added support for Qt based tools
@@ -66,7 +76,7 @@ fhDOOM is one of my little side projects. I am working on this because its fun a
   * Fixed tons of warnings
   * image_usePrecompressedTextures is 0 by default, so HD texture packs (like Wulfen) can be used more easily.
 
-### Screenshots
+## Screenshots
 
 Shadow Mapping
 
@@ -98,9 +108,9 @@ Enhanced Light Editor (Qt based)
 
 All Screenshots were taken with HD textures installed (Wulfen, Monoxead, xio).
 
-### Installation
+## Installation
 
- * Download Binaries here: http://www.facinghell.com/fhdoom/fhDOOM-1.5.0-1405.zip
+ * Download Binaries here: http://www.facinghell.com/fhdoom/fhDOOM-1.5.1-1413.zip
  * Extract zip to a location of your choice (e.g. c:\games)
  * Copy 5 files from the original DOOM3 (CD or Steam) to base directory of fhDOOM (e.g. c:\games\fhDOOM\base):
     * pak000.pk4
@@ -111,27 +121,34 @@ All Screenshots were taken with HD textures installed (Wulfen, Monoxead, xio).
  * Start game by clicking on fhDOOM.exe
  * Don't forget to change the game's resolution (fhDOOM does not yet select your native resolution automatically).
 
-### Benchmarks
-System:
-  * Windows 8.1 (64bit)
-  * Intel Core2Quad Q9550 (2.83GHz)
-  * 8GB RAM
-  * Geforce GTX 570 (353.30)
+## FAQ
 
-Settings:
-  * 1920x1200 (r_mode 15)
-  * r_multiSamples 8
-  * image_anisotropy 16
-  * fullscreen
+#### Q1. Are Mods supported?
+Yes!
+Mod support is pretty much the same as in vanilla Doom3 1.3.1 (only difference: game dll is named 'fhGame-x86' instead of 'gamex86').
 
-time demo (demo1.demo) results with original doom textures, POM disabled (r_pomEnabled 0):
-  * stencil shadows: ~190 
-  * shadow mapping: ~185
-  * shadow mapping + AMD workaround: ~145 (workaround enforced on nVidia with r_amdWorkaround 2)
+#### Q2. Is fhDOOM compatible with mods for vanilla Doom3 1.3.1?
+It depends. 
+Pure content mods containing only textures, scripts, maps and such things should work just fine (only exception: custom ARB2 shaders won't work).
+Mods that come with a compiled game dll (gamex86.dll on windows, gamex86.so on linux) won't work. Those game dlls must be recompiled for fhDOOM.
 
-time demo (demo1.demo) results with HD textures (shadow mapping enabled):
-  * POM disabled: ~180
-  * POM enabled: ~160
+#### Q3. Can i use SikkMod with fhDOOM?
+No, because SikkMod is based on ARB2 shaders (see Q2).
+
+#### Q4. Can i use HD texture mods (Wulfen, Monoxead, etc.) with fhDOOM?
+Yes (see Q2).
+
+#### Q5. How do i (re)compile a mods game dll for fhDOOM?
+Unfortunately that's currently not that easy. You have basically two options:
+ 1. If you don't care about existing installations of officially released fhDOOM binaries, you could just clone the latest fhDOOM version from github. You apply your changes to the game code and distribute the whole thing (executable and game dlls).
+ 2. You clone the fhDOOM version from github that matches the latest official binary release. You apply your changes to the game code and distribute only the game dll to the user (the user must have fhDOOM installed). Pretty much like vanilla Doom3 1.3.1.
+
+Both options are far from being good, but since i am working for the most part on the engine itself and not on the game code, i never felt the need to improve this. If you want to make a mod and need to compile your own game dll, let me know. If there is enough interest in better support for this, i will set up and release some kind of SDK to easily compile only the game code.
+
+#### Q6. Does multiplayer work?
+I suppose it does... but i don't know for sure. Feel free to test it out and share your findings :)
+
+
 
 ## cvars
 
@@ -160,11 +177,13 @@ fhDOOM added and changed a couple of cvars. This list of cvars might be interest
   * r_smBrightness <float>: adjust default brightness of soft shadows
   * r_smSoftness <float>: scale default softness of soft shadows (higher values will lead to artifacts)
   * r_smPolyOffsetFactor <float>: depth-offset of shadow maps (increasing this will fix artifacts from high softness, but will also increase light bleeding)
-  * r_smQuality <-1|0|1|2>: set quality/size of shadow maps
+  * r_smForceLod <-1|0|1|2>: set lod (quality/size) of shadow maps for all lights
     * -1: choose dynamically based on light size and distance from viewer
     * 0: high quality (1024x1024)
     * 1: mid quality (512x512)
     * 2: low quality (256x256)
+  * r_smLodBias <0|1|2>: apply lod bias to lights to reduce quality without forcing all lights to the same lod.
+  * r_smUseStaticOcclusion <0|1>: enable/disable static occlusion geometry from ocl files
   * r_glCoreProfile <0|1>: enable/disable opengl core profile (requires full restart of the game)
   * r_glDebugOutput <0|1|2>: OpenGL debug messages, requires core profile
     * 0: No debug message
@@ -172,21 +191,16 @@ fhDOOM added and changed a couple of cvars. This list of cvars might be interest
     * 2: sync debug messages   
   * con_fontScale <float>: scale font size in console
   * con_size <float>: scale console (not immediately visible, close and re-open the console to see it)
-  * r_amdWorkaround <0|1|2>: enable temporary workaround for AMD hardware
-    * 0: workaround disabled
-    * 1: workaround enabled only on AMD hardware
-    * 2: workaround always enabled
+  * com_showFPS <0|1|2|3>: 0=Off, 1=FPS, 2=ms, 3=FPS+ms
+  * com_showBackendStats <0|1>: show various backend perf counters
+  * g_projectileLightLodBias <0|1|2>: reduce shadow quality from projectile lights, usually not noticable
+  * g_muzzleFlashLightLodBias <0|1|2>: reduce shadow quality from muzzle flashes, usually not noticable
 
-
-### Notes
-  * Only fully tested on nVidia hardware. Unfortunately a quick test on AMD hardware revealed some serious issues. There is a workaround in place, but it causes a pretty big performance hit (the workaround is only enabled for AMD, nVidia users won't suffer from it).
-    I am going to investigate these issues more closely to find an actual solution and enable full performance for AMD.
-    Not tested on Intel at all.
+## Notes  
   * The maps of the original game were not designed with shadow mapping in mind. I tried to find sensible default shadow parameters, but those parameters are not the perfect fit in every case, so if you look closely enough you will notice a few glitches here and there
     * light bleeding
     * low-res/blocky shadows
-  * Parallax Occlusion Mapping is disabled by default, because it looks just weird and wrong in a lot of places (I haven't put much work into it).
-  * Shadow maps are not yet implemented for parallel/directional lights (fall back to stencil shadows)
+  * Parallax Occlusion Mapping is disabled by default, because it looks weird and wrong in a lot of places.
   * Shaders from RoE expansion pack not rewritten yet
   * There was a time, where you could switch from core profile to compatibility profile (r_glCoreProfile). In compatibility profile, 
     you were still able to use ARB2 shaders for special effects (like heat haze). This feature stopped working for some reason.
@@ -197,28 +211,25 @@ fhDOOM added and changed a couple of cvars. This list of cvars might be interest
   * I already had a linux version up and running, but its not tested very well. I am currently focussed on windows.
   * I added support for Qt based tools purely out of curiosity. I have currently no plans to port more tools to Qt.  
   * Other stuff on my ToDo list (no particular order):
-    * Some ideas to improve render performance (related to shadow mapping). The engine runs pretty decent on my (fairly dated) machine, not sure if its worth the effort. Might change with more advanced rendering features.
-    * Poisson sampling for shadow maps 
+    * Some ideas to improve render performance (related to shadow mapping). The engine runs pretty decent on my (fairly dated) machine, not sure if its worth the effort. Might change with more advanced rendering features.    
     * Expose different sampling techniques (currently hard coded)
     * HDR rendering/Bloom
     * Tesselation/Displacement Mapping
-    * Multi threading (primarily to improve loading times. Not sure entirely yet how to parallelize the rendering or game code)    
+    * Multi threading
     * Hardware/GPU skinning
     * Port deprecated MBCS MFC stuff to unicode, so you don't need that MBCS Addon für VS2013. 
     * Doom3 contains a very early and simple form of Megatexturing. Might be interesting to re-enable that for modern OpenGL and GLSL.
-    * Rework available graphic options 
-      * not sure if they all work properly
-      * some of them make no sense on a modern PC (e.g. you don't want to disable specular maps)    
     * 64bit support would simplify the build process on linux (totally irrelevant on windows, the actual game doesn't really need that much memory...)
       * Get rid of ASM code. Rewrite with compiler intrinsics? Not sure if its worth the effort... the generic C/C++ implementation might be sufficient (needs some testing)
       * Get rid of EAX stuff
     * Look into Doom3's texture compression and modern alternatives. Does the wulfen texture pack (and others) really need to be that big? How does it effect rendering performance? Pretty sure it could improve loading times...
     * Render everything to an offscreen buffer
       * simple super sampling
-      * fast switching between different r_modes, simplifies messy fullscreen switch
+      * fast switching between different r_modes
+      * simplifies messy fullscreen switch
    * i am pretty sure i forgot a lot of things, so you might discover more things that are pretty hacky or not working at all ;)
 
-### Building fhDOOM
+## Building fhDOOM
 
 Dependencies:
   * Visual Studio 2013 or Visual Studio 2015. Community versions are just fine, but VS2013 needs MBCS-Addon.

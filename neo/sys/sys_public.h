@@ -233,6 +233,7 @@ typedef struct sysMemoryStats_s {
 } sysMemoryStats_t;
 
 typedef unsigned long address_t;
+typedef unsigned long long uint64;
 
 template<class type> class idList;		// for Sys_ListFiles
 
@@ -263,9 +264,10 @@ void			Sys_DebugVPrintf( const char *fmt, va_list arg );
 // NOTE: due to SYS_MINSLEEP this is very bad portability karma, and should be completely removed
 void			Sys_Sleep( int msec );
 
-// Sys_Milliseconds should only be used for profiling purposes,
+// Sys_Milliseconds and Sys_Microseconds should only be used for profiling purposes,
 // any game related timing information should come from event timestamps
 int				Sys_Milliseconds( void );
+uint64          Sys_Microseconds();
 
 // for accurate performance testing
 double			Sys_GetClockTicks( void );

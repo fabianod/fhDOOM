@@ -851,6 +851,7 @@ void idInteraction::CreateInteraction( const idRenderModel *model ) {
 	surfaces = (surfaceInteraction_t *)R_ClearedStaticAlloc( sizeof( *surfaces ) * numSurfaces );
 
 	bool interactionGenerated = false;
+	const bool isStaticWorldModel = model->IsStaticWorldModel();
 
 	// check each surface in the model
 	for ( int c = 0 ; c < model->NumSurfaces() ; c++ ) {
@@ -878,7 +879,7 @@ void idInteraction::CreateInteraction( const idRenderModel *model ) {
 		}
 
 		surfaceInteraction_t *sint = &surfaces[c];
-
+		sint->isStaticWorldModel = isStaticWorldModel;
 		sint->shader = shader;
 
 		// save the ambient tri pointer so we can reject lightTri interactions
@@ -927,7 +928,7 @@ void idInteraction::CreateInteraction( const idRenderModel *model ) {
 		// free the cull information when it's no longer needed
 		if ( sint->lightTris != LIGHT_TRIS_DEFERRED ) {
 			R_FreeInteractionCullInfo( sint->cullInfo );
-		}
+		}		
 	}
 
 	// if none of the surfaces generated anything, don't even bother checking?

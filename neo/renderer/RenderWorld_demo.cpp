@@ -496,8 +496,20 @@ void	idRenderWorldLocal::ReadRenderLight( ) {
 	for ( int i = 0; i < MAX_ENTITY_SHADER_PARMS; i++)
 		session->readDemo->ReadFloat( light.shaderParms[i] );
 	session->readDemo->ReadInt( (int&)light.referenceSound );
+
+	light.smLodBias = 0;
+	light.occlusionModel = nullptr;
+	light.shadowMode = shadowMode_t::Default;
+
 	if ( light.prelightModel ) {
-		light.prelightModel = renderModelManager->FindModel( session->readDemo->ReadHashString() );
+		const char* name = session->readDemo->ReadHashString();
+
+		light.prelightModel = renderModelManager->FindModel( name );
+
+		//"_prelight_light_xyz"
+		if(name && strlen(name) > 10) {
+			light.occlusionModel = renderModelManager->CheckModel( va( "_occluder_%s", &name[10] ) );
+		}		
 	}
 	if ( light.shader ) {
 		light.shader = declManager->FindMaterial( session->readDemo->ReadHashString() );
@@ -506,7 +518,7 @@ void	idRenderWorldLocal::ReadRenderLight( ) {
 		int	index;
 		session->readDemo->ReadInt( index );
 		light.referenceSound = session->sw->EmitterForIndex( index );
-	}
+	}	
 
 	UpdateLightDef( index, &light );
 

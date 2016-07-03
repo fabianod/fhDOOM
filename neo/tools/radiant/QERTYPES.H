@@ -189,8 +189,7 @@ typedef struct {
 #define PATCH_STYLEMASK    0xffff0000    // 
 
 
-struct brush_s;
-typedef struct brush_s brush_t;
+struct brush_t;
 
 struct fhSimpleVert;
 
@@ -241,57 +240,6 @@ enum {
 };
 
 
-typedef struct brush_s
-{
-	struct brush_s	*prev, *next;	// links in active/selected
-	struct brush_s	*oprev, *onext;	// links in entity
-	brush_t *   list;				//keep a handy link to the list its in
-	struct entity_s	*owner;
-	idVec3 mins, maxs;
-
-	idVec3	lightCenter;			// for moving the shading center of point lights
-	idVec3	lightRight;
-	idVec3	lightTarget;
-	idVec3	lightUp;
-	idVec3	lightRadius;
-	idVec3	lightOffset;
-	idVec3	lightColor;
-	idVec3	lightStart;
-	idVec3	lightEnd;
-	bool	pointLight;
-	bool	startEnd;
-	int		lightTexture;
-
-	bool	trackLightOrigin;	// this brush is a special case light brush
-	bool	entityModel;
-
-	face_t  *brush_faces;
-
-	//
-	// curve brush extensions
-	// all are derived from brush_faces
-	bool	hiddenBrush;
-	bool	forceWireFrame;
-	bool	forceVisibile;
-
-	patchMesh_t *pPatch;
-	struct entity_s *pUndoOwner;
-
-	int undoId;						//undo ID
-	int redoId;						//redo ID
-	int ownerId;					//entityId of the owner entity for undo
-
-	int numberId;         // brush number
-
-	idRenderModel	*modelHandle;
-  mutable idRenderModel *animSnapshotModel;
-
-	// brush primitive only
-	idDict	epairs;
-
-} brush_t;
-
-
 // eclass show flags
 
 #define		ECLASS_LIGHT			0x00000001
@@ -333,7 +281,6 @@ typedef struct eclass_s
 	struct eclass_s *next;
 	idStr	name;
 	bool	fixedsize;
-	bool	unknown;		// wasn't found in source
 	idVec3	mins, maxs;
 	idVec3	color;
 	texdef_t texdef;
@@ -343,14 +290,11 @@ typedef struct eclass_s
 	idRenderModel *modelHandle;
 	idRenderModel *entityModel;
 
-	int   nFrame;
 	unsigned int nShowFlags;
 	idStr	defMaterial;
 	idDict	args;
 	idDict	defArgs;
 	idList<evar_t> vars;
-
-	HMODULE	hPlug;
 } eclass_t;
 
 extern	eclass_t	*eclass;

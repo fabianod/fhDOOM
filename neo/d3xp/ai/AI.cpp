@@ -1020,7 +1020,7 @@ void idAI::InitMuzzleFlash( void ) {
 	flashTime = SEC2MS( spawnArgs.GetFloat( "flashTime", "0.25" ) );
 
 	memset( &worldMuzzleFlash, 0, sizeof ( worldMuzzleFlash ) );
-
+	
 	worldMuzzleFlash.pointLight = true;
 	worldMuzzleFlash.shader = declManager->FindMaterial( shader, false );
 	worldMuzzleFlash.shaderParms[ SHADERPARM_RED ] = flashColor[0];
@@ -4631,6 +4631,7 @@ void idAI::TriggerWeaponEffects( const idVec3 &muzzle ) {
 		GetJointWorldTransform( flashJointWorld, gameLocal.time, org, axis );
 
 		if ( worldMuzzleFlash.lightRadius.x > 0.0f ) {
+			worldMuzzleFlash.smLodBias = g_muzzleFlashLightLodBias.GetInteger();
 			worldMuzzleFlash.axis = axis;
 			worldMuzzleFlash.shaderParms[SHADERPARM_TIMEOFFSET] = -MS2SEC( gameLocal.time );
 			if ( worldMuzzleFlashHandle != - 1 ) {

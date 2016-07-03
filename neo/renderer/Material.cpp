@@ -632,7 +632,9 @@ int idMaterial::ParseTerm( idLexer &src ) {
 		return EXP_REG_GLOBAL7;
 	}
 	if ( !token.Icmp( "fragmentPrograms" ) ) {
-		return GetExpressionConstant( (float) glConfig.ARBFragmentProgramAvailable );
+		//TODO(johl): remove this completely? where is it used?
+		//return GetExpressionConstant( (float) glConfig.ARBFragmentProgramAvailable );
+		return GetExpressionConstant( (float) true );
 	}
 
 	if ( !token.Icmp( "sound" ) ) {
@@ -3018,6 +3020,45 @@ const shaderStage_t *idMaterial::GetBumpStage( void ) const {
 		}
 	}
 	return NULL;
+}
+
+/*
+===================
+idMaterial::SurfaceCastsSoftShadow
+===================
+*/
+bool idMaterial::SurfaceCastsSoftShadow() const {
+
+	if ( TestMaterialFlag( MF_FORCESHADOWS ) ) {
+		return true;
+	}
+
+	if ( coverage == MC_TRANSLUCENT ) {
+		return false;
+	}
+
+	if( coverage == MC_PERFORATED ) {
+
+		//WARNING(johl): this is kind of hacky but is necessary to get the 
+		//               original Doom3 materials to work at a decent perf.
+		//               Decals don't cast a shadow, unfortunately there is no
+		//               flag indicating whether a material is decal or not.
+		//               Decals usually are alpha tested and have the 'noshadows'
+		//               flag set, but 'noshadows' is ignored by fhDOOM on alphatested
+		//               surfaces to enable alphatested shadows.
+		//               Current soltuion: Just assume all materials starting with
+		//               'textures/decals/' are decals and dont cast a shadows.
+		static const char* const decalsPrefix = "textures/decals/";
+		static const int decalsPrefixLen = strlen(decalsPrefix);
+
+		if (cullType != CT_TWO_SIDED && (strncmp( GetName(), decalsPrefix, decalsPrefixLen ) == 0)) {
+			return false;
+		}
+
+		return true;
+	}
+
+	return !TestMaterialFlag( MF_NOSHADOWS );
 }
 
 /*

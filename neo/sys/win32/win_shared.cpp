@@ -68,6 +68,20 @@ int Sys_Milliseconds( void ) {
 
 /*
 ================
+Sys_Microseconds
+================
+*/
+uint64 Sys_Microseconds() {
+	static LARGE_INTEGER frequency;
+	static bool b = QueryPerformanceFrequency( &frequency );
+
+	LARGE_INTEGER now;
+	QueryPerformanceCounter( &now );
+	return (1000000LL * now.QuadPart) / frequency.QuadPart;
+}
+
+/*
+================
 Sys_GetSystemRam
 
 	returns amount of physical memory in MB

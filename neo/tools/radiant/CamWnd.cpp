@@ -202,10 +202,7 @@ void CCamWnd::OnPaint() {
 		common->Printf("Please restart " EDITOR_WINDOWTEXT " if the camera view is not working\n");
 	}
 	else {
-    fhImmediateMode::ResetStats();
-    idTimer timer;
-    timer.Start();
-
+	    fhImmediateMode::ResetStats();
 		QE_CheckOpenGLForErrors();
 
 		g_pSplitList = NULL;
@@ -217,9 +214,6 @@ void CCamWnd::OnPaint() {
 
 		Cam_Draw();
 		QE_CheckOpenGLForErrors();
-
-    timer.Stop();
-    common->Printf("CamWnd: count=%d, data=%d, milliseconds=%f\n", fhImmediateMode::DrawCallCount(), fhImmediateMode::DrawCallVertexSize(), timer.Milliseconds());
 		wglSwapBuffers(dc.m_hDC);
 	}
 }
@@ -770,15 +764,12 @@ void setGLMode(int mode) {
 			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 			globalImages->BindNull();
 			glDisable(GL_BLEND);
-			glDisable(GL_DEPTH_TEST);
-      if(!r_glCoreProfile.GetBool())
-			  glColor3f( 1.0f, 1.0f, 1.0f );
+			glDisable(GL_DEPTH_TEST);			
 			break;
 
 		case cd_solid:
 			glCullFace(GL_FRONT);
-			glEnable(GL_CULL_FACE);
-			glShadeModel(GL_FLAT);
+			glEnable(GL_CULL_FACE);			
 			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 			globalImages->BindNull();
 			glDisable(GL_BLEND);
@@ -788,8 +779,7 @@ void setGLMode(int mode) {
 
 		case cd_texture:
 			glCullFace(GL_FRONT);
-			glEnable(GL_CULL_FACE);
-			glShadeModel(GL_FLAT);
+			glEnable(GL_CULL_FACE);			
 			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 			glDisable(GL_BLEND);
 			glEnable(GL_DEPTH_TEST);
@@ -1186,9 +1176,9 @@ void CCamWnd::ShiftTexture_BrushPrimit(face_t *f, int x, int y) {
 
 
 bool IsBModel(brush_t *b) {
-	const char *v = ValueForKey( b->owner, "model" );
+	const char *v = b->owner->ValueForKey( "model" );
 	if (v && *v) {
-		const char *n = ValueForKey( b->owner, "name");
+		const char *n = b->owner->ValueForKey("name");
 		return (stricmp( n, v ) == 0);
 	}
 	return false;
@@ -1208,7 +1198,7 @@ void CCamWnd::BuildEntityRenderState( entity_t *ent, bool update) {
 	idDict		spawnArgs;
 	const char	*name = NULL;
 
-	Entity_UpdateSoundEmitter( ent );
+	ent->UpdateSoundEmitter();
 
 	// delete the existing def if we aren't creating a brand new world
 	if ( !update ) {
@@ -1239,7 +1229,7 @@ void CCamWnd::BuildEntityRenderState( entity_t *ent, bool update) {
 	}
 
 	// any entity can have a model
-	name = ValueForKey( ent, "name" );
+	name = ent->ValueForKey( "name" );
 	v = spawnArgs.GetString("model");
 	if ( v && *v ) {
 		renderEntity_t	refent;
@@ -1343,75 +1333,69 @@ void CCamWnd::BuildEntityRenderState( entity_t *ent, bool update) {
 
 }
 
-void Tris_ToOBJ(const char *outFile, idTriList *tris, idMatList *mats) {
-	idFile *f = fileSystem->OpenExplicitFileWrite( outFile );
-	if ( f ) {
-		char out[1024];
-		strcpy(out, outFile);
-		StripExtension(out);
+void Tris_ToOBJ(idTriList *tris, idMatList *mats, idFile* objFile, idFile* mtlFile) {
+	if(!tris || !objFile)
+		return;
 
-		idList<idStr*> matNames;
-		int i, j, k;
-		int indexBase = 1;
-		idStr lastMaterial("");
-		int matCount = 0;
-		//idStr basePath = cvarSystem->GetCVarString( "fs_savepath" );
-		f->Printf( "mtllib %s.mtl\n", out );
-		for (i = 0; i < tris->Num(); i++) {
-			srfTriangles_t *tri = (*tris)[i];
-			for (j = 0; j < tri->numVerts; j++) {
-				f->Printf( "v %f %f %f\n", tri->verts[j].xyz.x, tri->verts[j].xyz.z, -tri->verts[j].xyz.y );
-			}
-			for (j = 0; j < tri->numVerts; j++) {
-				f->Printf( "vt %f %f\n", tri->verts[j].st.x, 1.0f - tri->verts[j].st.y );
-			}
-			for (j = 0; j < tri->numVerts; j++) {
-				f->Printf( "vn %f %f %f\n", tri->verts[j].normal.x, tri->verts[j].normal.y, tri->verts[j].normal.z );
-			}
+	idList<idStr*> matNames;
+	int i, j, k;
+	int indexBase = 1;
+	idStr lastMaterial("");
+	int matCount = 0;
+	
+	if(mtlFile) {
+		objFile->Printf( "mtllib %s\n", mtlFile->GetName() );
+	}
 
-			if (stricmp( (*mats)[i]->GetName(), lastMaterial)) {
-				lastMaterial = (*mats)[i]->GetName();
-
-				bool found = false;
-				for (k = 0; k < matNames.Num(); k++) {
-					if ( idStr::Icmp(matNames[k]->c_str(), lastMaterial.c_str()) == 0 ) {
-						found = true;
-						// f->Printf( "usemtl m%i\n", k );
-						f->Printf( "usemtl %s\n", lastMaterial.c_str() );
-						break;
-					}
-				}
-
-				if (!found) {
-					// f->Printf( "usemtl m%i\n", matCount++ );
-					f->Printf( "usemtl %s\n", lastMaterial.c_str() );
-					matNames.Append(new idStr(lastMaterial));
-				}
-			}
-
-			for (int j = 0; j < tri->numIndexes; j += 3) {
-				int i1, i2, i3;
-				i1 = tri->indexes[j+2] + indexBase;
-				i2 = tri->indexes[j+1] + indexBase;
-				i3 = tri->indexes[j] + indexBase; 
-				f->Printf( "f %i/%i/%i %i/%i/%i %i/%i/%i\n", i1,i1,i1, i2,i2,i2, i3,i3,i3 );
-			}
-
-			indexBase += tri->numVerts;
-
+	for (i = 0; i < tris->Num(); i++) {
+		srfTriangles_t *tri = (*tris)[i];
+		for (j = 0; j < tri->numVerts; j++) {
+			objFile->Printf( "v %f %f %f\n", tri->verts[j].xyz.x, tri->verts[j].xyz.z, -tri->verts[j].xyz.y );
 		}
-		fileSystem->CloseFile( f );
+		for (j = 0; j < tri->numVerts; j++) {
+			objFile->Printf( "vt %f %f\n", tri->verts[j].st.x, 1.0f - tri->verts[j].st.y );
+		}
+		for (j = 0; j < tri->numVerts; j++) {
+			objFile->Printf( "vn %f %f %f\n", tri->verts[j].normal.x, tri->verts[j].normal.y, tri->verts[j].normal.z );
+		}
 
-		strcat(out, ".mtl");
-		f = fileSystem->OpenExplicitFileWrite( out );
-		if (f) {
+		if (mats && mats->Num() > i && stricmp( (*mats)[i]->GetName(), lastMaterial)) {
+			lastMaterial = (*mats)[i]->GetName();
+
+			bool found = false;
 			for (k = 0; k < matNames.Num(); k++) {
-				// This presumes the diffuse tga name matches the material name
-				f->Printf( "newmtl %s\n\tNs 0\n\td 1\n\tillum 2\n\tKd 0 0 0 \n\tKs 0.22 0.22 0.22 \n\tKa 0 0 0 \n\tmap_Kd %s/base/%s.tga\n\n\n", matNames[k]->c_str(), "z:/d3xp", matNames[k]->c_str() );
+				if ( idStr::Icmp(matNames[k]->c_str(), lastMaterial.c_str()) == 0 ) {
+					found = true;
+					// f->Printf( "usemtl m%i\n", k );
+					objFile->Printf( "usemtl %s\n", lastMaterial.c_str() );
+					break;
+				}
 			}
-			fileSystem->CloseFile( f );
+
+			if (!found) {
+				// f->Printf( "usemtl m%i\n", matCount++ );
+				objFile->Printf( "usemtl %s\n", lastMaterial.c_str() );
+				matNames.Append(new idStr(lastMaterial));
+			}
 		}
 
+		for (int j = 0; j < tri->numIndexes; j += 3) {
+			int i1, i2, i3;
+			i1 = tri->indexes[j+2] + indexBase;
+			i2 = tri->indexes[j+1] + indexBase;
+			i3 = tri->indexes[j] + indexBase; 
+			objFile->Printf( "f %i/%i/%i %i/%i/%i %i/%i/%i\n", i1,i1,i1, i2,i2,i2, i3,i3,i3 );
+		}
+
+		indexBase += tri->numVerts;
+
+	}
+
+	if(mats && mtlFile) {
+		for (k = 0; k < matNames.Num(); k++) {
+			// This presumes the diffuse tga name matches the material name
+			mtlFile->Printf( "newmtl %s\n\tNs 0\n\td 1\n\tillum 2\n\tKd 0 0 0 \n\tKs 0.22 0.22 0.22 \n\tKa 0 0 0 \n\tmap_Kd %s/base/%s.tga\n\n\n", matNames[k]->c_str(), "z:/d3xp", matNames[k]->c_str() );
+		}
 	}
 }
 
@@ -1420,7 +1404,7 @@ int Brush_TransformModel(brush_t *brush, idTriList *tris, idMatList *mats) {
 	if (brush->modelHandle > 0 ) {
 		idRenderModel *model = brush->modelHandle;
 		if (model) {
-			float	a = FloatForKey(brush->owner, "angle");
+			float	a = brush->owner->FloatForKey("angle");
 			float	s, c;
 			//FIXME: support full rotation matrix
 			bool matrix = false;
@@ -1429,7 +1413,7 @@ int Brush_TransformModel(brush_t *brush, idTriList *tris, idMatList *mats) {
 				c = cos( DEG2RAD(a) );
 			}
 			idMat3 mat;
-			if (GetMatrixForKey(brush->owner, "rotation", mat)) {
+			if (brush->owner->GetMatrixForKey("rotation", mat)) {
 				matrix = true;
 			}
 
@@ -1617,7 +1601,21 @@ void Select_ToOBJ() {
 			Brush_ToTris(b, &tris, &mats, true, false);
 		}
 
-		Tris_ToOBJ(dlgFile.GetPathName().GetBuffer(0), &tris, &mats);
+		char objFilePath[MAX_PATH];
+		char mtlFilePath[MAX_PATH];
+
+		sprintf(objFilePath, "%s", dlgFile.GetPathName().GetBuffer(0));
+		StripExtension(objFilePath);
+		sprintf(mtlFilePath, "%s.mtl", objFilePath);
+		sprintf(objFilePath, "%s", dlgFile.GetPathName().GetBuffer(0));
+
+		idFile *objFile = fileSystem->OpenExplicitFileWrite( objFilePath );
+		idFile *mtlFile = fileSystem->OpenExplicitFileWrite( mtlFilePath );
+
+		Tris_ToOBJ(&tris, &mats, objFile, mtlFile);
+
+		fileSystem->CloseFile( objFile );
+		fileSystem->CloseFile( mtlFile );
 
 		for( i = 0; i < tris.Num(); i++ ) {
 			R_FreeStaticTriSurf( tris[i] );
@@ -1918,7 +1916,7 @@ void CCamWnd::ToggleSoundMode() {
 	UpdateCaption();
 
 	for ( entity_t *ent = entities.next ; ent != &entities ; ent = ent->next ) {
-		Entity_UpdateSoundEmitter( ent );
+		ent->UpdateSoundEmitter();
 	}
 }
 
@@ -2018,7 +2016,7 @@ void CCamWnd::Cam_Render() {
 
 void CCamWnd::OnTimer(UINT nIDEvent) 
 {
-	if (animationMode || nIDEvent == 1) {
+	if ((renderMode && animationMode) || nIDEvent == 1) {
 		Sys_UpdateWindows(W_CAMERA);
 	}
 	if (nIDEvent == 1) {
@@ -2036,7 +2034,7 @@ void CCamWnd::UpdateCameraView() {
 		brush_t *b = selected_brushes.next;
 		if (b->owner->eclass->nShowFlags & ECLASS_CAMERAVIEW) {
 			// find the entity that targets this
-			const char *name = ValueForKey(b->owner, "name");
+			const char *name = b->owner->ValueForKey("name");
 			entity_t *ent = FindEntity("target", name);
 			if (ent) {
 				if (!saveValid) {

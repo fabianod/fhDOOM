@@ -34,6 +34,11 @@ If you have questions concerning this license or the applicable additional terms
 #include "Model_ase.h"
 #include "Model_lwo.h"
 #include "Model_ma.h"
+#include "Model_obj.h"
+#include "RenderMatrix.h"
+//#include <algorithm>
+#include <unordered_map>
+
 
 idCVar idRenderModelStatic::r_mergeModelSurfaces( "r_mergeModelSurfaces", "1", CVAR_BOOL|CVAR_RENDERER, "combine model surfaces with the same material" );
 idCVar idRenderModelStatic::r_slopVertex( "r_slopVertex", "0.01", CVAR_RENDERER, "merge xyz coordinates this far apart" );
@@ -296,6 +301,9 @@ void idRenderModelStatic::InitFromFile( const char *fileName ) {
 	} else if ( extension.Icmp( "ma" ) == 0 ) {
 		loaded		= LoadMA( name );
 		reloadable	= true;
+	} else if (extension.Icmp( "obj" ) == 0) {
+		loaded = LoadOBJ( name );
+		reloadable = true;
 	} else {
 		common->Warning( "idRenderModelStatic::InitFromFile: unknown type for model: \'%s\'", name.c_str() );
 		loaded		= false;
@@ -336,7 +344,11 @@ void idRenderModelStatic::InitEmpty( const char *fileName ) {
 	// shadowed normally
 	if ( !idStr::Cmpn( fileName, "_area", 5 ) ) {
 		isStaticWorldModel = true;
-	} else {
+	}
+	else if (!idStr::Cmpn( fileName, "_occluder", 9 )) {
+		isStaticWorldModel = true;
+	}
+	else {
 		isStaticWorldModel = false;
 	}
 
@@ -1872,6 +1884,107 @@ bool idRenderModelStatic::ConvertMAToModelSurfaces (const struct maModel_s *ma )
 	return true;
 }
 
+static bool LessThan(const objVertex_t& a, const objVertex_t& b) {
+	if(a.xyz < b.xyz)
+		return true;
+}
+
+
+namespace std {
+
+	template <>
+	struct hash<objVertex_t>
+	{
+		std::size_t operator()( const objVertex_t& k ) const
+		{
+			return k.xyz ^ k.st ^k.normal;
+		}
+	};
+}
+
+/*
+=================
+idRenderModelStatic::ConvertOBJToModelSurfaces
+=================
+*/
+bool idRenderModelStatic::ConvertOBJToModelSurfaces( const struct objModel_t *obj ) {
+	assert(obj);
+
+	struct LookupVertex {		
+		objVertex_t objVertex;
+		int index;
+	};
+
+	idList<idDrawVert> drawVerts;
+	idList<int> indices;
+
+	drawVerts.Resize(1000 * 100, 1024);
+	indices.Resize(1000 * 100, 1024);
+	drawVerts.SetNum(0, false);
+	indices.SetNum(0, false);
+
+	std::unordered_map<objVertex_t, int> map;
+	map.reserve(1024 * 320);
+
+	auto FindVertexIndex = [&](const objVertex_t& objVertex) {
+
+		auto it = map.find(objVertex);
+		if(it != map.end()) {
+			return it->second;
+		}
+
+		idDrawVert drawVert;		
+		drawVert.Clear();
+		drawVert.xyz = fhRenderMatrix::OpenGL2Doom(obj->xyz[objVertex.xyz - 1]);
+		drawVert.st = obj->st[objVertex.st - 1];
+		drawVert.normal = fhRenderMatrix::OpenGL2Doom(obj->normal[objVertex.normal - 1]);
+		drawVert.color[0] = drawVert.color[1] = drawVert.color[2] = drawVert.color[3] = 255;
+		drawVerts.Append(drawVert);
+
+		int index = drawVerts.Num() - 1; 
+		map[objVertex] = index;
+		return index;
+	};
+
+	for(int i=0; i<obj->surface.Num(); ++i) {
+		const objSurface_t& objSurface = obj->surface[i];
+		indices.SetNum(0, false);
+		drawVerts.SetNum(0, false);
+		map.clear();
+
+		for(int j=0; j<objSurface.faces.Num(); ++j) {
+			const objFace_t& objFace = objSurface.faces[j];
+
+			indices.Append(FindVertexIndex(objFace.vertex[0]));			
+			indices.Append(FindVertexIndex(objFace.vertex[2]));
+			indices.Append(FindVertexIndex(objFace.vertex[1]));
+		}
+
+		modelSurface_t	surf;
+		memset( &surf, 0, sizeof( surf ) );
+		surf.id = this->NumSurfaces();
+		idStr material = objSurface.material;
+		material.Replace("__", "/");
+		surf.shader = declManager->FindMaterial( material );
+		surf.geometry = R_AllocStaticTriSurf();
+		surf.geometry->numVerts = drawVerts.Num();
+		surf.geometry->numIndexes = indices.Num();		
+		surf.geometry->generateNormals = false;
+		R_AllocStaticTriSurfIndexes( surf.geometry, indices.Num() );
+		R_AllocStaticTriSurfVerts(surf.geometry, drawVerts.Num());
+		
+		//copy indices
+		memcpy(surf.geometry->indexes, indices.Ptr(), indices.Num() * sizeof(indices[0]));
+
+		//copy vertices
+		memcpy(surf.geometry->verts, drawVerts.Ptr(), drawVerts.Num() * sizeof(drawVerts[0]));
+
+		this->AddSurface(surf);
+	}	
+
+	return true;
+}
+
 /*
 =================
 idRenderModelStatic::LoadASE
@@ -2096,6 +2209,33 @@ bool idRenderModelStatic::LoadFLT( const char *fileName ) {
 	return true;
 }
 
+/*
+=================
+idRenderModelStatic::LoadOBJ
+=================
+*/
+bool idRenderModelStatic::LoadOBJ( const char *fileName ) {
+	objModel_t *obj;
+
+	idTimer timer;
+	timer.Start();
+
+	obj = OBJ_Load( fileName );
+	if (obj == NULL) {
+		return false;
+	}	
+	timer.Stop();
+	common->Printf("Time to parse '%s': %fms\n", fileName, timer.Milliseconds());
+
+	timer.Start();
+	ConvertOBJToModelSurfaces( obj );
+	timer.Stop();
+	common->Printf("Time to create surfaces from '%s': %fms\n", fileName, timer.Milliseconds());
+
+	OBJ_Free( obj );
+
+	return true;
+}
 
 //=============================================================================
 

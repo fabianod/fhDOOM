@@ -53,7 +53,7 @@ BOOL CALLBACK EditCommandDlgProc (
     if (index >= 0)
     {
 		  SendDlgItemMessage(hOwner, IDC_CMD_LIST, LB_GETTEXT, index, (LPARAM) (LPCTSTR) key);
-		  temp = ValueForKey (g_qeglobals.d_project_entity, key);
+		  temp = g_qeglobals.d_project_entity->ValueForKey(key);
 		  strcpy (value, temp);
 		  SetDlgItemText(hwndDlg, IDC_CMDMENUTEXT, key);
 		  SetDlgItemText(hwndDlg, IDC_CMDCOMMAND, value);
@@ -77,13 +77,8 @@ BOOL CALLBACK EditCommandDlgProc (
 					return FALSE;
 				}
 
-				//if (key[0] == 'b' && key[1] == 's' && key[2] == 'p')
-				//{
-					SetKeyValue (g_qeglobals.d_project_entity, key, value);
-					FillBSPMenu ();
-				//}
-				//else
-				//	common->Printf ("BSP commands must be preceded by \"bsp\"");
+				g_qeglobals.d_project_entity->SetKeyValue(key, value);
+				FillBSPMenu ();
 
 				EndDialog(hwndDlg, 1);
 				return TRUE;
@@ -126,7 +121,7 @@ BOOL CALLBACK AddCommandDlgProc (
 
 				if (key[0] == 'b' && key[1] == 's' && key[2] == 'p')
 				{
-					SetKeyValue (g_qeglobals.d_project_entity, key, value);
+					g_qeglobals.d_project_entity->SetKeyValue(key, value);
 					FillBSPMenu ();
 				}
 				else
@@ -175,12 +170,12 @@ BOOL CALLBACK ProjectDlgProc (
 	switch (uMsg)
     {
 	case WM_INITDIALOG:
-		SetDlgItemText(hwndDlg, IDC_PRJBASEPATH, ValueForKey (g_qeglobals.d_project_entity, "basepath"));
-		SetDlgItemText(hwndDlg, IDC_PRJMAPSPATH, ValueForKey (g_qeglobals.d_project_entity, "mapspath"));
-		SetDlgItemText(hwndDlg, IDC_PRJRSHCMD, ValueForKey (g_qeglobals.d_project_entity, "rshcmd"));
-		SetDlgItemText(hwndDlg, IDC_PRJREMOTEBASE, ValueForKey (g_qeglobals.d_project_entity, "remotebasepath"));
-		SetDlgItemText(hwndDlg, IDC_PRJENTITYPATH, ValueForKey (g_qeglobals.d_project_entity, "entitypath"));
-		SetDlgItemText(hwndDlg, IDC_PRJTEXPATH, ValueForKey (g_qeglobals.d_project_entity, "texturepath"));
+		SetDlgItemText(hwndDlg, IDC_PRJBASEPATH, g_qeglobals.d_project_entity->ValueForKey ("basepath"));
+		SetDlgItemText(hwndDlg, IDC_PRJMAPSPATH, g_qeglobals.d_project_entity->ValueForKey ("mapspath"));
+		SetDlgItemText(hwndDlg, IDC_PRJRSHCMD, g_qeglobals.d_project_entity->ValueForKey ("rshcmd"));
+		SetDlgItemText(hwndDlg, IDC_PRJREMOTEBASE, g_qeglobals.d_project_entity->ValueForKey ("remotebasepath"));
+		SetDlgItemText(hwndDlg, IDC_PRJENTITYPATH, g_qeglobals.d_project_entity->ValueForKey ("entitypath"));
+		SetDlgItemText(hwndDlg, IDC_PRJTEXPATH, g_qeglobals.d_project_entity->ValueForKey ("texturepath"));
 		UpdateBSPCommandList (hwndDlg);
 		// Timo
 		// additional fields
@@ -206,24 +201,24 @@ BOOL CALLBACK ProjectDlgProc (
 			case IDC_REMCMD:
 				index = SendDlgItemMessage (hwndDlg, IDC_CMD_LIST, LB_GETCURSEL, 0, 0);
 				SendDlgItemMessage(hwndDlg, IDC_CMD_LIST, LB_GETTEXT, index, (LPARAM) (LPCTSTR) key);
-				DeleteKey (g_qeglobals.d_project_entity, key);
+				g_qeglobals.d_project_entity->DeleteKey (key);
 				common->Printf ("Selected %d\n", index);
 				UpdateBSPCommandList (hwndDlg);
 				break;
 
 			case IDOK:
 				GetDlgItemText(hwndDlg, IDC_PRJBASEPATH, value, 1024);
-				SetKeyValue (g_qeglobals.d_project_entity, "basepath", value);
+				g_qeglobals.d_project_entity->SetKeyValue ("basepath", value);
 				GetDlgItemText(hwndDlg, IDC_PRJMAPSPATH, value, 1024);
-				SetKeyValue (g_qeglobals.d_project_entity, "mapspath", value);
+				g_qeglobals.d_project_entity->SetKeyValue ("mapspath", value);
 				GetDlgItemText(hwndDlg, IDC_PRJRSHCMD, value, 1024);
-				SetKeyValue (g_qeglobals.d_project_entity, "rshcmd", value);
+				g_qeglobals.d_project_entity->SetKeyValue ("rshcmd", value);
 				GetDlgItemText(hwndDlg, IDC_PRJREMOTEBASE, value, 1024);
-				SetKeyValue (g_qeglobals.d_project_entity, "remotebasepath", value);
+				g_qeglobals.d_project_entity->SetKeyValue ("remotebasepath", value);
 				GetDlgItemText(hwndDlg, IDC_PRJENTITYPATH, value, 1024);
-				SetKeyValue (g_qeglobals.d_project_entity, "entitypath", value);
+				g_qeglobals.d_project_entity->SetKeyValue ("entitypath", value);
 				GetDlgItemText(hwndDlg, IDC_PRJTEXPATH, value, 1024);
-				SetKeyValue (g_qeglobals.d_project_entity, "texturepath", value);
+				g_qeglobals.d_project_entity->SetKeyValue ("texturepath", value);
 				// Timo
 				// read additional fields
 				if ( IsDlgButtonChecked( hwndDlg, IDC_CHECK_BPRIMIT ) )
@@ -234,7 +229,7 @@ BOOL CALLBACK ProjectDlgProc (
 				{
 					g_qeglobals.m_bBrushPrimitMode = FALSE;
 				}
-				SetKeyValue ( g_qeglobals.d_project_entity, "brush_primit", ( g_qeglobals.m_bBrushPrimitMode ? "1" : "0" ) );
+				g_qeglobals.d_project_entity->SetKeyValue ( "brush_primit", ( g_qeglobals.m_bBrushPrimitMode ? "1" : "0" ) );
 
 				EndDialog(hwndDlg, 1);
 				QE_SaveProject(g_strProject);

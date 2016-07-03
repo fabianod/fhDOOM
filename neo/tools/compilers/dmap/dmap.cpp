@@ -46,21 +46,21 @@ bool ProcessModel( uEntity_t *e, bool floodFill ) {
 	dmapGlobals.timingMakeStructural.Start();
 	faces = MakeStructuralBspFaceList ( e->primitives );
 	e->tree = FaceBSP( faces );
-  dmapGlobals.timingMakeStructural.Stop();
+	dmapGlobals.timingMakeStructural.Stop();
 
 	// create portals at every leaf intersection
 	// to allow flood filling
 	dmapGlobals.timingMakeTreePortals.Start();
 	MakeTreePortals( e->tree );
-  dmapGlobals.timingMakeTreePortals.Stop();
+	dmapGlobals.timingMakeTreePortals.Stop();
 
 	// classify the leafs as opaque or areaportal
-  dmapGlobals.timingFilterBrushesIntoTree.Start();
+	dmapGlobals.timingFilterBrushesIntoTree.Start();
 	FilterBrushesIntoTree( e );
-  dmapGlobals.timingFilterBrushesIntoTree.Stop();
+	dmapGlobals.timingFilterBrushesIntoTree.Stop();
 
 	// see if the bsp is completely enclosed
-  dmapGlobals.timingFloodAndFill.Start();
+	dmapGlobals.timingFloodAndFill.Start();
 	if ( floodFill && !dmapGlobals.noFlood ) {
 		if ( FloodEntities( e->tree ) ) {
 			// set the outside leafs to opaque
@@ -76,27 +76,27 @@ bool ProcessModel( uEntity_t *e, bool floodFill ) {
 			return false;
 		}
 	}
-  dmapGlobals.timingFloodAndFill.Stop();
+	dmapGlobals.timingFloodAndFill.Stop();
 
 	// get minimum convex hulls for each visible side
 	// this must be done before creating area portals,
 	// because the visible hull is used as the portal
 	dmapGlobals.timingClipSidesByTree.Start();
 	ClipSidesByTree( e );
-  dmapGlobals.timingClipSidesByTree.Stop();
+	dmapGlobals.timingClipSidesByTree.Stop();
 
 	// determine areas before clipping tris into the
 	// tree, so tris will never cross area boundaries
 	dmapGlobals.timingFloodAreas.Start();
 	FloodAreas( e );
-  dmapGlobals.timingFloodAreas.Stop();
+	dmapGlobals.timingFloodAreas.Stop();
 
 	// we now have a BSP tree with solid and non-solid leafs marked with areas
 	// all primitives will now be clipped into this, throwing away
 	// fragments in the solid areas
 	dmapGlobals.timingPutPrimitivesInAreas.Start();
 	PutPrimitivesInAreas( e );
-  dmapGlobals.timingPutPrimitivesInAreas.Stop();
+	dmapGlobals.timingPutPrimitivesInAreas.Stop();
 
 	// now build shadow volumes for the lights and split
 	// the optimize lists by the light beam trees
@@ -104,21 +104,21 @@ bool ProcessModel( uEntity_t *e, bool floodFill ) {
 	// case
 	dmapGlobals.timingPreLight.Start();
 	Prelight( e );
-  dmapGlobals.timingPreLight.Stop();
+	dmapGlobals.timingPreLight.Stop();
 
 	// optimizing is a superset of fixing tjunctions
-  dmapGlobals.timingOptimize.Start();
+	dmapGlobals.timingOptimize.Start();
 	if ( !dmapGlobals.noOptimize ) {
 		OptimizeEntity( e );
 	} else  if ( !dmapGlobals.noTJunc ) {
 		FixEntityTjunctions( e );
 	}
-  dmapGlobals.timingOptimize.Stop();
+	dmapGlobals.timingOptimize.Stop();
 
 	// now fix t junctions across areas
-  dmapGlobals.timingFixTJunctions.Start();
+	dmapGlobals.timingFixTJunctions.Start();
 	FixGlobalTjunctions( e );
-  dmapGlobals.timingFixTJunctions.Stop();
+	dmapGlobals.timingFixTJunctions.Stop();
 
 	return true;
 }
@@ -300,7 +300,10 @@ void Dmap( const idCmdArgs &args ) {
 		} else if ( !idStr::Icmp( s, "noAAS" ) ) {
 			noAAS = true;
 			common->Printf( "noAAS = true\n" );
-		} else if ( !idStr::Icmp( s, "editorOutput" ) ) {
+		} else if (!idStr::Icmp( s, "exportObj" )) {
+			dmapGlobals.exportObj = true;
+			common->Printf( "exportObj = true\n" );
+		} else if (!idStr::Icmp( s, "editorOutput" )) {
 #ifdef _WIN32
 			com_outputMsg = true;
 #endif
@@ -350,7 +353,8 @@ void Dmap( const idCmdArgs &args ) {
 	}
 
 	if ( ProcessModels() ) {
-		WriteOutputFile();
+		WriteProcFile();
+		WriteOclFile();
 	} else {
 		leaked = true;
 	}

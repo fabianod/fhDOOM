@@ -322,8 +322,9 @@ void CNewTexWnd::OnPaint() {
 
 				// draw the selection border
 				if ( !idStr::Icmp(g_qeglobals.d_texturewin.texdef.name, mat->GetName()) ) {
-					glLineWidth(3);
-          im.SetTexture(nullptr);
+					//TODO(johl): linewidth>1 is deprecated. WTF?
+					glLineWidth( 1 /*3*/);
+					im.SetTexture(nullptr);
 					im.Color3f(1, 0, 0);
 					globalImages->BindNull();
 

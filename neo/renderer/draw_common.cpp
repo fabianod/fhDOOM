@@ -30,7 +30,7 @@ If you have questions concerning this license or the applicable additional terms
 
 #include "tr_local.h"
 #include "ImmediateMode.h"
-
+#include "RenderList.h"
 /*
 =====================
 RB_BakeTextureMatrixIntoTexgen
@@ -91,14 +91,9 @@ This is also called for the generated 2D rendering
 ==================
 */
 void RB_STD_T_RenderShaderPasses( const drawSurf_t *surf ) {
-	int			stage;
-	const idMaterial	*shader;
-	const shaderStage_t *pStage;
-	const float	*regs;
-	const srfTriangles_t	*tri;
 
-	tri = surf->geo;
-	shader = surf->material;
+	const srfTriangles_t* tri = surf->geo;
+	const idMaterial* shader = surf->material;
 
 	if ( !shader->HasAmbient() ) {
 		return;
@@ -106,12 +101,6 @@ void RB_STD_T_RenderShaderPasses( const drawSurf_t *surf ) {
 
 	if ( shader->IsPortalSky() ) {
 		return;
-	}
-
-	// change the matrix if needed
-	if ( surf->space != backEnd.currentSpace ) {
-		GL_ModelViewMatrix.Load( surf->space->modelViewMatrix );
-		backEnd.currentSpace = surf->space;
 	}
 
 	// change the scissor if needed
@@ -134,7 +123,7 @@ void RB_STD_T_RenderShaderPasses( const drawSurf_t *surf ) {
 	}
 
 	// get the expressions for conditionals / color / texcoords
-	regs = surf->shaderRegisters;
+	const float	*regs = surf->shaderRegisters;
 
 	// set face culling appropriately
 	GL_Cull( shader->GetCullType() );
@@ -144,17 +133,9 @@ void RB_STD_T_RenderShaderPasses( const drawSurf_t *surf ) {
 		glEnable( GL_POLYGON_OFFSET_FILL );
 		glPolygonOffset( r_offsetFactor.GetFloat(), r_offsetUnits.GetFloat() * shader->GetPolygonOffset() );
 	}
-	
-	if ( surf->space->weaponDepthHack ) {
-		RB_EnterWeaponDepthHack();
-	}
 
-	if ( surf->space->modelDepthHack != 0.0f ) {
-		RB_EnterModelDepthHack( surf->space->modelDepthHack );
-	}
-
-	for ( stage = 0; stage < shader->GetNumStages() ; stage++ ) {		
-		pStage = shader->GetStage(stage);
+	for ( int stage = 0; stage < shader->GetNumStages() ; stage++ ) {		
+		const shaderStage_t *pStage = shader->GetStage(stage);
 
 		// check the enable condition
 		if ( regs[ pStage->conditionRegister ] == 0 ) {
@@ -184,7 +165,7 @@ void RB_STD_T_RenderShaderPasses( const drawSurf_t *surf ) {
 			if (!pStage->glslStage || !pStage->glslStage->program)
 				continue;
 
-			RB_GLSL_RenderSpecialShaderStage( regs, pStage, pStage->glslStage, tri );
+			RB_GLSL_RenderSpecialShaderStage( regs, pStage, pStage->glslStage, surf );
 		}
 		else if (glslShaderStage_t *glslStage = pStage->glslStage) { // see if we are a glsl-style stage
 
@@ -194,7 +175,7 @@ void RB_STD_T_RenderShaderPasses( const drawSurf_t *surf ) {
 			if (!glslStage->program)
 				continue;
 
-			RB_GLSL_RenderSpecialShaderStage( regs, pStage, glslStage, tri );
+			RB_GLSL_RenderSpecialShaderStage( regs, pStage, glslStage, surf );
 		}
 		else {
 			RB_GLSL_RenderShaderStage( surf, pStage );
@@ -205,78 +186,7 @@ void RB_STD_T_RenderShaderPasses( const drawSurf_t *surf ) {
 	if ( shader->TestMaterialFlag(MF_POLYGONOFFSET) ) {
 		glDisable( GL_POLYGON_OFFSET_FILL );
 	}
-	if ( surf->space->weaponDepthHack || surf->space->modelDepthHack != 0.0f ) {
-		RB_LeaveDepthHack();
-	}
 }
-
-/*
-=====================
-RB_STD_DrawShaderPasses
-
-Draw non-light dependent passes
-=====================
-*/
-int RB_STD_DrawShaderPasses( drawSurf_t **drawSurfs, int numDrawSurfs ) {
-	int				i;
-
-	// only obey skipAmbient if we are rendering a view
-	if ( backEnd.viewDef->viewEntitys && r_skipAmbient.GetBool() ) {
-		return numDrawSurfs;
-	}
-
-	RB_LogComment( "---------- RB_STD_DrawShaderPasses ----------\n" );  
-
-	// if we are about to draw the first surface that needs
-	// the rendering in a texture, copy it over
-	if ( drawSurfs[0]->material->GetSort() >= SS_POST_PROCESS ) {
-		if ( r_skipPostProcess.GetBool() ) {
-			return 0;
-		}
-
-		// only dump if in a 3d view
-		if ( backEnd.viewDef->viewEntitys ) {
-			globalImages->currentRenderImage->CopyFramebuffer( backEnd.viewDef->viewport.x1,
-				backEnd.viewDef->viewport.y1,  backEnd.viewDef->viewport.x2 -  backEnd.viewDef->viewport.x1 + 1,
-				backEnd.viewDef->viewport.y2 -  backEnd.viewDef->viewport.y1 + 1, true );
-		}
-		backEnd.currentRenderCopied = true;
-	}
-
-	GL_SelectTexture( 1 );
-	globalImages->BindNull();
-
-	GL_SelectTexture( 0 );
-
-	// we don't use RB_RenderDrawSurfListWithFunction()
-	// because we want to defer the matrix load because many
-	// surfaces won't draw any ambient passes
-	backEnd.currentSpace = NULL;
-	for (i = 0  ; i < numDrawSurfs ; i++ ) {
-		if ( drawSurfs[i]->material->SuppressInSubview() ) {
-			continue;
-		}
-
-		if ( backEnd.viewDef->isXraySubview && drawSurfs[i]->space->entityDef ) {
-			if ( drawSurfs[i]->space->entityDef->parms.xrayIndex != 2 ) {
-				continue;
-			}
-		}
-
-		// we need to draw the post process shaders after we have drawn the fog lights
-		if ( drawSurfs[i]->material->GetSort() >= SS_POST_PROCESS
-			&& !backEnd.currentRenderCopied ) {
-			break;
-		}
-    
-		RB_STD_T_RenderShaderPasses( drawSurfs[i] );    
-	}  
-
-	GL_Cull( CT_FRONT_SIDED );
-
-	return i;
-}
-
 
 //========================================================================
 
@@ -359,7 +269,7 @@ void RB_STD_LightScale( void ) {
 
 	GL_State( GLS_SRCBLEND_DST_COLOR | GLS_DSTBLEND_SRC_COLOR );
 	GL_Cull( CT_TWO_SIDED );	// so mirror views also get it
-	globalImages->BindNull();
+	globalImages->BindNull(0);
 	glDisable( GL_DEPTH_TEST );
 	glDisable( GL_STENCIL_TEST );
 
@@ -397,6 +307,8 @@ RB_STD_DrawView
 =============
 */
 void	RB_STD_DrawView( void ) {
+	fhTimeElapsed timeElapsed(&backEnd.stats.totaltime);
+
 	drawSurf_t	 **drawSurfs;
 	int			numDrawSurfs;
 
@@ -414,7 +326,7 @@ void	RB_STD_DrawView( void ) {
 	RB_DetermineLightScale();
 
 	// fill the depth buffer and clear color buffer to black except on
-	// subviews
+	// subviews	
 	RB_GLSL_FillDepthBuffer(drawSurfs, numDrawSurfs);
 
 	if (backEnd.viewDef->viewEntitys) {
@@ -433,16 +345,25 @@ void	RB_STD_DrawView( void ) {
 	// uplight the entire screen to crutch up not having better blending range
 	RB_STD_LightScale();  
 
-	// now draw any non-light dependent shading passes
-	int	processed = RB_STD_DrawShaderPasses( drawSurfs, numDrawSurfs );  
+	{
+		fhTimeElapsed timeElapsed(&backEnd.stats.groups[backEndGroup::NonInteraction].time);
+		backEnd.stats.groups[backEndGroup::NonInteraction].passes += 1;
 
-	// fob and blend lights
-	RB_STD_FogAllLights();
+		StageRenderList stageRenderlist;
 
-	// now draw any post-processing effects using _currentRender
-	if ( processed < numDrawSurfs ) {
-		RB_STD_DrawShaderPasses( drawSurfs+processed, numDrawSurfs-processed );
+		// now draw any non-light dependent shading passes
+		int	processed = RB_GLSL_CreateStageRenderList( drawSurfs, numDrawSurfs, stageRenderlist, SS_POST_PROCESS );
+		RB_GLSL_SubmitStageRenderList(stageRenderlist);
+
+		// fob and blend lights
+		RB_STD_FogAllLights();
+
+		// now draw any post-processing effects using _currentRender
+		if (processed < numDrawSurfs) {
+			stageRenderlist.Clear();
+			RB_GLSL_CreateStageRenderList( drawSurfs + processed, numDrawSurfs - processed, stageRenderlist, 1000 );
+			RB_GLSL_SubmitStageRenderList(stageRenderlist);
+		}	
 	}
-
-	RB_RenderDebugTools( drawSurfs, numDrawSurfs );  
+	RB_RenderDebugTools( drawSurfs, numDrawSurfs ); 
 }

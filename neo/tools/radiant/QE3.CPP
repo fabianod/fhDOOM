@@ -175,7 +175,7 @@ void QE_CheckAutoSave(void) {
 		if (g_PrefsDlg.m_bSnapShots && stricmp(currentmap, "unnamed.map") != 0) {
 			Map_Snapshot();
 		} else {
-			Map_SaveFile(ValueForKey(g_qeglobals.d_project_entity, (autoToggle == 0) ? "autosave1" : "autosave2" ), false, true);
+			Map_SaveFile(g_qeglobals.d_project_entity->ValueForKey((autoToggle == 0) ? "autosave1" : "autosave2" ), false, true);
 			autoToggle ^= 1;
 		}
 		Sys_Status("Autosaving...Saved.", 0);
@@ -237,13 +237,13 @@ bool QE_LoadProject(char *projectfile) {
 	}
 
 	// set here some default project settings you need
-	if (strlen(ValueForKey(g_qeglobals.d_project_entity, "brush_primit")) == 0) {
-		SetKeyValue(g_qeglobals.d_project_entity, "brush_primit", "0");
+	if (strlen(g_qeglobals.d_project_entity->ValueForKey("brush_primit")) == 0) {
+		g_qeglobals.d_project_entity->SetKeyValue("brush_primit", "0");
 	}
 
-	g_qeglobals.m_bBrushPrimitMode = IntForKey(g_qeglobals.d_project_entity, "brush_primit");
+	g_qeglobals.m_bBrushPrimitMode = g_qeglobals.d_project_entity->IntForKey("brush_primit");
 
-	Eclass_InitForSourceDirectory(ValueForKey(g_qeglobals.d_project_entity, "entitypath"));
+	Eclass_InitForSourceDirectory(g_qeglobals.d_project_entity->ValueForKey("entitypath"));
 	g_Inspectors->FillClassList();	// list in entity window
 
 	Map_New();
@@ -319,10 +319,10 @@ void ConnectEntities(void) {
 		}
 	}
 
-	target = ValueForKey(e1, "target");
+	target = e1->ValueForKey("target");
 	if ( target && *target) {
 		for (t = 1; t < 2048; t++) {
-			target = ValueForKey(e1, va("target%i", t));
+			target = e1->ValueForKey(va("target%i", t));
 			if (target && *target) {
 				continue;
 			} else {
@@ -334,16 +334,16 @@ void ConnectEntities(void) {
 	}
 
 	for (i = 1; i < g_qeglobals.d_select_count; i++) {
-		target = ValueForKey(g_qeglobals.d_select_order[i]->owner, "name");
+		target = g_qeglobals.d_select_order[i]->owner->ValueForKey("name");
 		if (target && *target) {
 			strTarget = target;
 		} else {
 			UniqueTargetName(strTarget);
 		}
 		if (t == 0) {
-			SetKeyValue(e1, "target", strTarget);
+			e1->SetKeyValue("target", strTarget);
 		} else {
-			SetKeyValue(e1, va("target%i", t), strTarget);
+			e1->SetKeyValue(va("target%i", t), strTarget);
 		}
 		t++;
 	}

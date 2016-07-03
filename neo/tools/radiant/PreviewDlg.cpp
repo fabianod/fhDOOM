@@ -115,10 +115,16 @@ void CPreviewDlg::BuildTree() {
 		files = fileSystem->ListFilesTree( "models", ".lwo" );
 		AddStrList( "base", files->GetList(), MODELS );
 		fileSystem->FreeFileList( files );
+
 		files = fileSystem->ListFilesTree( "models", ".ase" );
 		AddStrList( "base", files->GetList(), MODELS );
 		fileSystem->FreeFileList( files );
+
 		files = fileSystem->ListFilesTree( "models", ".ma" );
+		AddStrList( "base", files->GetList(), MODELS );
+		fileSystem->FreeFileList( files );
+
+		files = fileSystem->ListFilesTree( "models", ".obj" );
 		AddStrList( "base", files->GetList(), MODELS );
 		fileSystem->FreeFileList( files );
 	} else if ( currentMode == SOUNDS ) {

@@ -115,7 +115,7 @@ void idRenderWorldLocal::TouchWorldModels( void ) {
 idRenderWorldLocal::ParseModel
 ================
 */
-idRenderModel *idRenderWorldLocal::ParseModel( idLexer *src ) {
+static idRenderModel* ParseModel( idLexer *src ) {
 	idToken			token;
 
 	src->ExpectTokenString( "{" );
@@ -180,12 +180,85 @@ idRenderModel *idRenderWorldLocal::ParseModel( idLexer *src ) {
 	return model;
 }
 
+
+/*
+================
+idRenderWorldLocal::ParseOccluder
+================
+*/
+static idRenderModel* ParseOccluder( idLexer *src ) {
+	idToken			token;
+
+	src->ExpectTokenString( "{" );
+
+	// parse the name
+	src->ExpectAnyToken( &token );
+
+	idRenderModel* model = renderModelManager->AllocModel();
+	model->InitEmpty( token );
+
+	int numSurfaces = src->ParseInt();
+	if (numSurfaces < 0) {
+		src->Error( "R_ParseModel: bad numSurfaces" );
+	}
+
+	for (int i = 0; i < numSurfaces; i++) {
+		src->ExpectTokenString( "{" );
+
+		src->ExpectAnyToken( &token );
+
+		modelSurface_t	surf;
+		surf.shader = declManager->FindMaterial( token );
+
+		((idMaterial*)surf.shader)->AddReference();
+
+		srfTriangles_t* tri = R_AllocStaticTriSurf();
+		surf.geometry = tri;
+
+		tri->numVerts = src->ParseInt();
+		tri->numIndexes = src->ParseInt();
+		bool texcoords = (src->ParseInt() != 1);
+
+		R_AllocStaticTriSurfVerts( tri, tri->numVerts );
+		for (int j = 0; j < tri->numVerts; j++) {
+			float	vec[5];
+
+			if(texcoords) {
+				src->Parse1DMatrix( 5, vec );
+			} else {
+				src->Parse1DMatrix( 3, vec );
+			}
+
+			tri->verts[j].xyz[0] = vec[0];
+			tri->verts[j].xyz[1] = vec[1];
+			tri->verts[j].xyz[2] = vec[2];
+			tri->verts[j].st[0] = vec[3];
+			tri->verts[j].st[1] = vec[4];
+		}
+
+		R_AllocStaticTriSurfIndexes( tri, tri->numIndexes );
+		for (int j = 0; j < tri->numIndexes; j++) {
+			tri->indexes[j] = src->ParseInt();
+		}
+		src->ExpectTokenString( "}" );
+
+		// add the completed surface to the model
+		model->AddSurface( surf );
+	}
+
+	src->ExpectTokenString( "}" );
+
+	model->FinishSurfaces();
+
+	return model;
+}
+
 /*
 ================
 idRenderWorldLocal::ParseShadowModel
 ================
 */
-idRenderModel *idRenderWorldLocal::ParseShadowModel( idLexer *src ) {
+static idRenderModel* ParseShadowModel( idLexer *src ) {
 	idRenderModel	*model;
 	idToken			token;
 	int				j;
@@ -473,23 +546,31 @@ A NULL or empty name will make a world without a map model, which
 is still useful for displaying a bare model
 =================
 */
-bool idRenderWorldLocal::InitFromMap( const char *name ) {
-	idLexer *		src;
-	idToken			token;
-	idStr			filename;
-	idRenderModel *	lastModel;
-
+bool idRenderWorldLocal::InitFromMap( const char *name ) {			
 	// if this is an empty world, initialize manually
-	if ( !name || !name[0] ) {
+	if (!name || !name[0]) {
 		FreeWorld();
 		mapName.Clear();
 		ClearWorld();
 		return true;
 	}
 
+	if(!LoadProc(name))
+		return false;
+
+	return LoadOcl(name);
+}
+
+/*
+=====================
+idRenderWorldLocal::LoadProc
+=====================
+*/
+bool idRenderWorldLocal::LoadProc(const char* name) {
+	assert(name && name[0] && "name must not be empty at this point");
 
 	// load it
-	filename = name;
+	idStr filename = name;
 	filename.SetFileExtension( PROC_FILE_EXT );
 
 	// if we are reloading the same map, check the timestamp
@@ -497,50 +578,49 @@ bool idRenderWorldLocal::InitFromMap( const char *name ) {
 	ID_TIME_T currentTimeStamp;
 	fileSystem->ReadFile( filename, NULL, &currentTimeStamp );
 
-	if ( name == mapName ) {
-		if ( currentTimeStamp != FILE_NOT_FOUND_TIMESTAMP && currentTimeStamp == mapTimeStamp ) {
-			common->Printf( "idRenderWorldLocal::InitFromMap: retaining existing map\n" );
+	if (name == mapName) {
+		if (currentTimeStamp != FILE_NOT_FOUND_TIMESTAMP && currentTimeStamp == mapTimeStamp) {
+			common->Printf( "idRenderWorldLocal::LoadProc: retaining existing map\n" );
 			FreeDefs();
 			TouchWorldModels();
 			AddWorldModelEntities();
 			ClearPortalStates();
 			return true;
 		}
-		common->Printf( "idRenderWorldLocal::InitFromMap: timestamp has changed, reloading.\n" );
+		common->Printf( "idRenderWorldLocal::LoadProc: timestamp has changed, reloading.\n" );
 	}
 
 	FreeWorld();
 
-	src = new idLexer( filename, LEXFL_NOSTRINGCONCAT | LEXFL_NODOLLARPRECOMPILE );
-	if ( !src->IsLoaded() ) {
-		common->Printf( "idRenderWorldLocal::InitFromMap: %s not found\n", filename.c_str() );
+	idLexer src( filename, LEXFL_NOSTRINGCONCAT | LEXFL_NODOLLARPRECOMPILE );
+	if (!src.IsLoaded()) {
+		common->Printf( "idRenderWorldLocal::LoadProc: %s not found\n", filename.c_str() );
 		ClearWorld();
 		return false;
 	}
-
 
 	mapName = name;
 	mapTimeStamp = currentTimeStamp;
 
 	// if we are writing a demo, archive the load command
-	if ( session->writeDemo ) {
+	if (session->writeDemo) {
 		WriteLoadMap();
 	}
 
-	if ( !src->ReadToken( &token ) || token.Icmp( PROC_FILE_ID ) ) {
-		common->Printf( "idRenderWorldLocal::InitFromMap: bad id '%s' instead of '%s'\n", token.c_str(), PROC_FILE_ID );
-		delete src;
+	idToken token;
+	if (!src.ReadToken( &token ) || token.Icmp( PROC_FILE_ID )) {
+		common->Printf( "idRenderWorldLocal::LoadProc: bad id '%s' instead of '%s'\n", token.c_str(), PROC_FILE_ID );
 		return false;
 	}
 
 	// parse the file
-	while ( 1 ) {
-		if ( !src->ReadToken( &token ) ) {
+	while (1) {
+		if (!src.ReadToken( &token )) {
 			break;
 		}
 
-		if ( token == "model" ) {
-			lastModel = ParseModel( src );
+		if (token == "model") {
+			idRenderModel* lastModel = ParseModel( &src );
 
 			// add it to the model manager list
 			renderModelManager->AddModel( lastModel );
@@ -550,8 +630,8 @@ bool idRenderWorldLocal::InitFromMap( const char *name ) {
 			continue;
 		}
 
-		if ( token == "shadowModel" ) {
-			lastModel = ParseShadowModel( src );
+		if (token == "shadowModel") {
+			idRenderModel* lastModel = ParseShadowModel( &src );
 
 			// add it to the model manager list
 			renderModelManager->AddModel( lastModel );
@@ -561,23 +641,21 @@ bool idRenderWorldLocal::InitFromMap( const char *name ) {
 			continue;
 		}
 
-		if ( token == "interAreaPortals" ) {
-			ParseInterAreaPortals( src );
+		if (token == "interAreaPortals") {
+			ParseInterAreaPortals( &src );
 			continue;
 		}
 
-		if ( token == "nodes" ) {
-			ParseNodes( src );
+		if (token == "nodes") {
+			ParseNodes( &src );
 			continue;
 		}
 
-		src->Error( "idRenderWorldLocal::InitFromMap: bad token \"%s\"", token.c_str() );
+		src.Error( "idRenderWorldLocal::LoadProc: bad token \"%s\"", token.c_str() );
 	}
 
-	delete src;
-
 	// if it was a trivial map without any areas, create a single area
-	if ( !numPortalAreas ) {
+	if (!numPortalAreas) {
 		ClearWorld();
 	}
 
@@ -586,6 +664,67 @@ bool idRenderWorldLocal::InitFromMap( const char *name ) {
 
 	AddWorldModelEntities();
 	ClearPortalStates();
+
+	// done!
+	return true;
+}
+
+/*
+=====================
+idRenderWorldLocal::LoadOcl
+=====================
+*/
+bool idRenderWorldLocal::LoadOcl( const char* name ) {
+	assert(name && name[0] && "name must not be empty at this point");
+
+	// load it
+	idStr filename = name;
+	filename.SetFileExtension( OCL_FILE_EXT );
+
+	// if we are reloading the same map, check the timestamp
+	// and try to skip all the work
+	ID_TIME_T currentTimeStamp;
+	fileSystem->ReadFile( filename, NULL, &currentTimeStamp );
+/*
+	if (name == mapName) {
+		if (currentTimeStamp != FILE_NOT_FOUND_TIMESTAMP && currentTimeStamp == mapTimeStamp) {
+			common->Printf( "idRenderWorldLocal::LoadOcl: retaining existing map\n" );
+			return true;
+		}
+		common->Printf( "idRenderWorldLocal::LoadOcl: timestamp has changed, reloading.\n" );
+	}
+*/	
+	idLexer src( filename, LEXFL_NOSTRINGCONCAT | LEXFL_NODOLLARPRECOMPILE );
+	if (!src.IsLoaded()) {
+		common->Warning( "idRenderWorldLocal::LoadOcl: %s not found\n", filename.c_str() );
+		return true;
+	}
+
+	idToken token;
+	if (!src.ReadToken( &token ) || token.Icmp( OCL_FILE_ID )) {
+		common->Printf( "idRenderWorldLocal::LoadOcl: bad id '%s' instead of '%s'\n", token.c_str(), OCL_FILE_ID );
+		return false;
+	}
+
+	// parse the file
+	while (1) {
+		if (!src.ReadToken( &token )) {
+			break;
+		}
+
+		if (token == "occluder") {
+			idRenderModel* lastModel = ParseOccluder( &src );
+
+			// add it to the model manager list
+			renderModelManager->AddModel( lastModel );
+
+			// save it in the list to free when clearing this map
+			localModels.Append( lastModel );
+			continue;
+		}
+
+		src.Error( "idRenderWorldLocal::LoadOcl: bad token \"%s\"", token.c_str() );
+	}
 
 	// done!
 	return true;

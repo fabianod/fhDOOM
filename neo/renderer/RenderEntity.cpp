@@ -82,6 +82,7 @@ idRenderLightLocal::idRenderLightLocal() {
 	memset( &parms, 0, sizeof( parms ) );
 	memset( modelMatrix, 0, sizeof( modelMatrix ) );
 	memset( shadowFrustums, 0, sizeof( shadowFrustums ) );
+	memset( shadowMapFrustums, 0, sizeof( shadowMapFrustums ) );
 	memset( lightProject, 0, sizeof( lightProject ) );
 	memset( frustum, 0, sizeof( frustum ) );
 	memset( frustumWindings, 0, sizeof( frustumWindings ) );
@@ -97,6 +98,7 @@ idRenderLightLocal::idRenderLightLocal() {
 	globalLightOrigin		= vec3_zero;
 	frustumTris				= NULL;
 	numShadowFrustums		= 0;
+	numShadowMapFrustums	= 0;
 	viewCount				= 0;
 	viewLight				= NULL;
 	references				= NULL;
@@ -123,10 +125,7 @@ shadowMode_t idRenderLightLocal::ShadowMode() const {
 		return shadowMode_t::NoShadows;
 
 	if (parms.noShadows)
-		return shadowMode_t::NoShadows;
-
-	if (parms.parallel)
-		return shadowMode_t::StencilShadow;
+		return shadowMode_t::NoShadows;	
 
 	if (parms.shadowMode != shadowMode_t::Default)
 		return parms.shadowMode;

@@ -31,6 +31,8 @@ If you have questions concerning this license or the applicable additional terms
 
 #include "Image.h"
 #include "MegaTexture.h"
+#include "RenderProgram.h"
+#include "RenderMatrix.h"
 
 class idRenderWorldLocal;
 
@@ -137,6 +139,28 @@ typedef struct {
 } shadowFrustum_t;
 
 
+typedef struct {
+	int		numPlanes;		// this is always 6 for now
+	idPlane	planes[6];
+	// positive sides facing inward
+	// plane 5 is always the plane the projection is going to, the
+	// other planes are just clip planes
+	// all planes are in global coordinates	
+
+	float nearPlaneDistance;
+	float farPlaneDistance;
+	float width;
+	float height;
+
+	idBounds viewSpaceBounds; //minimum/maximum of light corners in view space, required for parallel lights
+	
+	fhRenderMatrix viewMatrix;	
+	fhRenderMatrix projectionMatrix;
+	fhRenderMatrix viewProjectionMatrix;	
+
+	bool Cull(const idVec3 points[8]) const;
+} shadowMapFrustum_t;
+
 // areas have references to hold all the lights and entities in them
 typedef struct areaReference_s {
 	struct areaReference_s *areaNext;				// chain in the area
@@ -230,6 +254,9 @@ public:
 
 	int						numShadowFrustums;		// one for projected lights, usually six for point lights
 	shadowFrustum_t			shadowFrustums[6];
+
+	int						numShadowMapFrustums;   // one for projected lights, usually six for point lights, all frustums are symmetric
+	shadowMapFrustum_t		shadowMapFrustums[6];
 
 	int						viewCount;				// if == tr.viewCount, the light is on the viewDef->viewLights list
 	struct viewLight_s *	viewLight;
@@ -337,6 +364,16 @@ typedef struct viewLight_s {
 	idImage *				falloffImage;				// falloff image used by backend
 
 	int						shadowMapLod;               // Shadow Map Level of Detail, 0 = max shadow map resolution, higher values means lower resolution
+	                                                    // Maybe, we don't need this here, as soon as we move more things (matrices, coords) from backend to frontend?
+	fhRenderMatrix          viewMatrices[6];
+	fhRenderMatrix          projectionMatrices[6];
+	fhRenderMatrix          viewProjectionMatrices[6];
+	shadowCoord_t           shadowCoords[6];
+	float                   nearClip[6];
+	float                   farClip[6];
+	float                   width[6];
+	float                   height[6];
+	bool                    culled[6];
 
 	const struct drawSurf_s	*globalShadows;				// shadow everything
 	const struct drawSurf_s	*localInteractions;			// don't get local shadows
@@ -467,6 +504,9 @@ typedef struct {
 	idVec4				bumpMatrix[2];
 	idVec4				diffuseMatrix[2];
 	idVec4				specularMatrix[2];
+	bool                hasBumpMatrix;
+	bool                hasDiffuseMatrix;
+	bool                hasSpecularMatrix;
 } drawInteraction_t;
 
 
@@ -510,6 +550,31 @@ typedef struct {
 	idImage	*image;
 	int		cubeFace;					// when copying to a cubeMap
 } copyRenderCommand_t;
+
+static const int vertex_attrib_position = 0;
+static const int vertex_attrib_texcoord = 1;
+static const int vertex_attrib_normal = 2;
+static const int vertex_attrib_color = 3;
+static const int vertex_attrib_binormal = 4;
+static const int vertex_attrib_tangent = 5;
+static const int vertex_attrib_position_shadow = 6;
+
+#ifdef None
+#undef None
+#endif
+
+enum class fhVertexLayout {
+	None = 0,
+	Shadow,
+	ShadowSilhouette,
+	Simple,
+	Draw,
+	DrawPosOnly,
+	DrawPosTexOnly,
+	DrawPosColorOnly,
+	DrawPosColorTexOnly,
+	COUNT
+};
 
 
 //=======================================================================
@@ -603,14 +668,12 @@ typedef struct {
 
 
 typedef struct {
-	int		current2DMap;
-	int		current3DMap;
-	int		currentCubeMap;
-	int		texEnv;
-	textureType_t	textureType;
+	int		currentTexture;
+	int     currentSampler;
+	textureType_t	currentTextureType;
 } tmu_t;
 
-const int MAX_MULTITEXTURE_UNITS =	8;
+const int MAX_MULTITEXTURE_UNITS =	16;
 typedef struct {
 	tmu_t		tmu[MAX_MULTITEXTURE_UNITS];
 	int			currenttmu;
@@ -641,12 +704,35 @@ typedef struct {
 	int		c_vboIndexes;
 	float	c_overDraw;	
 
-	int     c_shadowPasses;
-	int     c_shadowMapDraws;
-
 	float	maxLightValue;	// for light scale
 	int		msec;			// total msec for backend run
 } backEndCounters_t;
+
+class fhTimeElapsed {
+public:
+	explicit fhTimeElapsed(uint64* c)
+		: counter(c)
+		, start(Sys_Microseconds())
+	{
+		assert(counter);
+	}
+
+	~fhTimeElapsed() {
+		Commit();
+	}
+
+	void Commit() {
+		if(counter) {
+			*counter += Sys_Microseconds() - start;
+			counter = nullptr;
+		}
+	}
+
+private:
+	uint64 start;
+	uint64* counter;
+};
+
 
 // all state modified by the back end is separated
 // from the front end state
@@ -654,6 +740,7 @@ typedef struct {
 	int					frameCount;		// used to track all images used in a frame
 	const viewDef_t	*	viewDef;
 	backEndCounters_t	pc;
+	backEndStats_t      stats;
 
 	const viewEntity_t *currentSpace;		// for detecting when a matrix must change
 	idScreenRect		currentScissor;
@@ -679,10 +766,6 @@ typedef struct {
 	int					c_copyFrameBuffer;
 
 	bool				glslReplaceArb2;
-
-	float               shadowViewProjection[6][16];
-	float               testViewMatrix[16];
-	float               testProjectionMatrix[16];
 } backEndState_t;
 
 
@@ -711,7 +794,7 @@ public:
 	virtual bool			IsFullScreen( void ) const;
 	virtual int				GetScreenWidth( void ) const;
 	virtual int				GetScreenHeight( void ) const;
-  virtual int       GetScreenAspectRatio( void ) const;
+	virtual int				GetScreenAspectRatio( void ) const;
 	virtual idRenderWorld *	AllocRenderWorld( void );
 	virtual void			FreeRenderWorld( idRenderWorld *rw );
 	virtual void			BeginLevelLoad( void );
@@ -728,8 +811,8 @@ public:
 	virtual void			GetGLSettings( int& width, int& height );
 	virtual void			PrintMemInfo( MemInfo_t *mi );
 
-  virtual void			DrawScaledChar( int x, int y, int ch, const idMaterial *materia, float scale );
-  virtual void			DrawScaledStringExt( int x, int y, const char *string, const idVec4 &setColor, bool forceColor, const idMaterial *material, float scale );  
+	virtual void			DrawScaledChar( int x, int y, int ch, const idMaterial *materia, float scale );
+	virtual void			DrawScaledStringExt( int x, int y, const char *string, const idVec4 &setColor, bool forceColor, const idMaterial *material, float scale );  
 	virtual void			DrawSmallChar( int x, int y, int ch, const idMaterial *material );
 	virtual void			DrawSmallStringExt( int x, int y, const char *string, const idVec4 &setColor, bool forceColor, const idMaterial *material );
 	virtual void			DrawBigChar( int x, int y, int ch, const idMaterial *material );
@@ -744,6 +827,7 @@ public:
 	virtual void			CaptureRenderToFile( const char *fileName, bool fixAlpha );
 	virtual void			UnCrop();
 	virtual bool			UploadImage( const char *imageName, const byte *data, int width, int height );
+	virtual backEndStats_t  GetBackEndStats() const;
 
 public:
 	// internal functions
@@ -803,8 +887,6 @@ public:
 	viewEntity_t			identitySpace;		// can use if we don't know viewDef->worldSpace is valid
 	FILE *					logFile;			// for logging GL calls and frame breaks
 
-	int						stencilIncr, stencilDecr;	// GL_INCR / INCR_WRAP_EXT, GL_DECR / GL_DECR_EXT
-
 	renderCrop_t			renderCrops[MAX_RENDER_CROPS];
 	int						currentRenderCrop;
 
@@ -832,6 +914,8 @@ extern idCVar r_multiSamples;			// number of antialiasing samples
 
 extern idCVar r_ignore;					// used for random debugging without defining new vars
 extern idCVar r_ignore2;				// used for random debugging without defining new vars
+extern idCVar r_ignore3;				// used for random debugging without defining new vars
+extern idCVar r_ignore4;				// used for random debugging without defining new vars
 extern idCVar r_znear;					// near Z clip plane
 
 extern idCVar r_finish;					// force a call to glFinish() every frame
@@ -994,13 +1078,21 @@ extern idCVar r_glCoreProfile;
 extern idCVar r_softParticles;
 extern idCVar r_defaultParticleSoftness;
 
-extern idCVar r_showShadowPasses;
-
 extern idCVar r_smPolyOffsetFactor;
 extern idCVar r_smPolyOffsetBias;
 extern idCVar r_smSoftness;
 extern idCVar r_smBrightness;
+extern idCVar r_smCascadeDistance0;
+extern idCVar r_smCascadeDistance1;
+extern idCVar r_smCascadeDistance2;
+extern idCVar r_smCascadeDistance3;
+extern idCVar r_smCascadeDistance4;
 
+extern idCVar r_pomEnabled;
+extern idCVar r_pomMaxHeight;
+extern idCVar r_shading;
+extern idCVar r_specularExp;
+extern idCVar r_specularScale;
 
 /*
 ====================================================================
@@ -1013,22 +1105,10 @@ GL wrapper/helper functions
 void	GL_SelectTexture( int unit );
 void	GL_CheckErrors( void );
 void	GL_State( int stateVector );
-void	GL_TexEnv( int env );
 void	GL_Cull( int cullType );
-void	GL_UseProgram( const fhRenderProgram* program );
-
-/*
-====================
-attributeOffset
-
-Calculate attribute offset by a (global) offset and (local) per-attribute offset
-====================
-*/
-template<typename T>
-const void* GL_AttributeOffset(T offset, const void* attributeOffset)
-{
-  return reinterpret_cast<const void*>((std::ptrdiff_t)offset + (std::ptrdiff_t)attributeOffset);
-}
+bool	GL_UseProgram( const fhRenderProgram* program );
+void    GL_SetVertexLayout( fhVertexLayout layout );
+void    GL_SetupVertexAttributes( fhVertexLayout layout, int offset );
 
 class joGLMatrixStack {
 public:
@@ -1049,8 +1129,6 @@ public:
 
   const float* Top() const { return Data(size); }
 
-  void Upload() const;
-
 private:
   float* Data(int StackIndex);
   const float* Data(int StackIndex) const;
@@ -1068,9 +1146,6 @@ private:
 
 extern joGLMatrixStack GL_ProjectionMatrix;
 extern joGLMatrixStack GL_ModelViewMatrix;
-extern joGLMatrixStack GL_TextureMatrix;
-
-
 
 const int GLS_SRCBLEND_ZERO						= 0x00000001;
 const int GLS_SRCBLEND_ONE						= 0x0;
@@ -1241,6 +1316,8 @@ bool R_CreateAmbientCache( srfTriangles_t *tri, bool needsLighting );
 void R_CreatePrivateShadowCache( srfTriangles_t *tri );
 void R_CreateVertexProgramShadowCache( srfTriangles_t *tri );
 
+
+void R_SetDrawInteraction( const shaderStage_t *surfaceStage, const float *surfaceRegs, idImage **image, idVec4 matrix[2], float color[4] );
 /*
 ============================================================
 
@@ -1309,7 +1386,6 @@ void RB_RenderDrawSurfListWithFunction( drawSurf_t **drawSurfs, int numDrawSurfs
 					  void (*triFunc_)( const drawSurf_t *) );
 void RB_RenderDrawSurfChainWithFunction( const drawSurf_t *drawSurfs, 
 										void (*triFunc_)( const drawSurf_t *) );
-void RB_LoadShaderTextureMatrix( const float *shaderRegisters, const textureStage_t *texture );
 void RB_GetShaderTextureMatrix( const float *shaderRegisters, const textureStage_t *texture, float matrix[16] );
 void RB_GetShaderTextureMatrix( const float *shaderRegisters, const textureStage_t *texture, idVec4 matrix[2] );
 void RB_CreateSingleDrawInteractions( const drawSurf_t *surf, void (*DrawInteraction)(const drawInteraction_t *) );
@@ -1332,7 +1408,6 @@ DRAW_STANDARD
 
 void RB_DrawElementsWithCounters( const srfTriangles_t *tri );
 void RB_DrawShadowElementsWithCounters( const srfTriangles_t *tri, int numIndexes );
-void RB_BindVariableStageImage( const textureStage_t *texture, const float *shaderRegisters );
 void RB_STD_DrawView( void );
 void RB_STD_FogAllLights( void );
 void RB_BakeTextureMatrixIntoTexgen( idPlane lightProject[3], const float textureMatrix[16] );
@@ -1355,7 +1430,7 @@ void	RB_GLSL_DrawInteractions( void );
 const	fhRenderProgram*  R_FindGlslProgram( const char* vertexShaderName, const char* fragmentShaderName );
 void	R_ReloadGlslPrograms_f( const idCmdArgs &args );
 void	RB_GLSL_FillDepthBuffer( drawSurf_t **drawSurfs, int numDrawSurfs );
-void	RB_GLSL_RenderSpecialShaderStage( const float* regs, const shaderStage_t* pStage, glslShaderStage_t* glslStage, const srfTriangles_t	*tri );
+void	RB_GLSL_RenderSpecialShaderStage( const float* regs, const shaderStage_t* pStage, glslShaderStage_t* glslStage, const drawSurf_t *surf );
 void	RB_GLSL_RenderShaderStage( const drawSurf_t *surf, const shaderStage_t* pStage );
 void	RB_GLSL_FogPass( const drawSurf_t *drawSurfs, const drawSurf_t *drawSurfs2 );
 void	RB_GLSL_BlendLight( const drawSurf_t *drawSurfs, const drawSurf_t *drawSurfs2 );
@@ -1724,7 +1799,9 @@ TR_SHAODWMAPPING
 =============================================================
 */
 
-void RB_RenderShadowMaps(viewLight_t* light);
+void R_MakeShadowMapFrustums( idRenderLightLocal *def );
+bool RB_RenderShadowMaps(viewLight_t* light);
+void RB_FreeAllShadowMaps();
 
 //=============================================
 

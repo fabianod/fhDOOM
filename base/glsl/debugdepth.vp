@@ -1,0 +1,15 @@
+#include "global.inc"
+
+layout(location = 0) in vec3 vertex_position;
+layout(location = 1) in vec2 vertex_texcoord;
+
+out vs_output
+{
+  vec2 texcoord;
+} result;
+
+void main(void)
+{
+  gl_Position = rpProjectionMatrix * rpModelViewMatrix * vec4(vertex_position, 1.0);  
+  result.texcoord = vertex_texcoord;
+}

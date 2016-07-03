@@ -351,7 +351,6 @@ void rvGEWorkspace::Render ( HDC hdc )
 	glFinish ( );
 	wglSwapBuffers(hdc);
 
-	glEnable( GL_TEXTURE_CUBE_MAP );
 	glEnable( GL_CULL_FACE);
 }
 

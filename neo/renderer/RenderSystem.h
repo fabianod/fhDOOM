@@ -45,7 +45,6 @@ typedef struct glconfig_s {
 	const char			*renderer_string;
 	const char			*vendor_string;
 	const char			*version_string;
-	const char			*extensions_string;
 	const char			*wgl_extensions_string;
 
 	bool				vendorisAMD;
@@ -63,20 +62,16 @@ typedef struct glconfig_s {
 	bool				multitextureAvailable;
 	bool				textureCompressionAvailable;
 	bool				anisotropicAvailable;
-	bool				textureLODBiasAvailable;
 	bool				textureEnvAddAvailable;
 	bool				cubeMapAvailable;
-	bool				envDot3Available;
-	bool				texture3DAvailable;
-	bool				sharedTexturePaletteAvailable;
-	bool				ARBVertexBufferObjectAvailable;
-	bool				ARBVertexProgramAvailable;
-	bool				ARBFragmentProgramAvailable;
+	bool				envDot3Available;		
 	bool				textureNonPowerOfTwoAvailable;
 	bool				depthBoundsTestAvailable;
+	bool                extDirectStateAccessAvailable;
+	bool                arbDirectStateAccessAvailable;
 
 	int					vidWidth, vidHeight;	// passed to R_BeginFrame
-  int         vidAspectRatio;
+	int					vidAspectRatio;
 
 	int					displayFrequency;
 
@@ -129,6 +124,80 @@ typedef struct {
 	int					maxWidthLarge;
 	char				name[64];
 } fontInfoEx_t;
+
+struct backEndGroup {
+	enum Enum {
+		DepthPrepass,
+		StencilShadows,
+		ShadowMap0,
+		ShadowMap1,
+		ShadowMap2,
+		Interaction,
+		FogLight,
+		BlendLight,
+		NonInteraction,
+		NUM
+	};
+
+	Enum value;
+};
+
+struct backEndGroupStats_t {
+	backEndGroupStats_t()
+		: drawcalls(0)
+		, passes(0)
+		, tris(0)
+		, time(0)
+	{}
+
+	uint32 drawcalls;
+	uint32 passes;
+	uint32 tris;
+	uint64 time; //micro seconds	
+
+	const backEndGroupStats_t& operator+=(const backEndGroupStats_t& rhs) {
+		drawcalls += rhs.drawcalls;
+		passes += rhs.passes;
+		time += rhs.time;
+		tris += rhs.tris;
+
+		return *this;
+	}
+
+	const backEndGroupStats_t& operator/=(uint32 v) {
+		drawcalls /= v;
+		passes /= v;
+		time /= v;
+		tris /= v;
+
+		return *this;
+	}
+};
+
+struct backEndStats_t {
+	backEndStats_t()
+		: totaltime(0)
+	{}
+
+	backEndGroupStats_t groups[backEndGroup::NUM];
+	uint64 totaltime;
+
+	const backEndStats_t& operator+=(const backEndStats_t& rhs) {
+		for(int i=0; i<backEndGroup::NUM; ++i) {
+			groups[i] += rhs.groups[i];
+		}
+		totaltime += rhs.totaltime;
+		return *this;
+	}
+
+	const backEndStats_t& operator/=(uint32 v) {
+		for (int i = 0; i < backEndGroup::NUM; ++i) {
+			groups[i] /= v;
+		}
+		totaltime /= v;
+		return *this;
+	}
+};
 
 const int SMALLCHAR_WIDTH		= 8;
 const int SMALLCHAR_HEIGHT		= 16;
@@ -245,6 +314,9 @@ public:
 	// texture filter / mipmapping / repeat won't be modified by the upload
 	// returns false if the image wasn't found
 	virtual bool			UploadImage( const char *imageName, const byte *data, int width, int height ) = 0;
+
+	// Get back end stats from previous frame.
+	virtual backEndStats_t GetBackEndStats() const = 0;
 };
 
 extern idRenderSystem *			renderSystem;

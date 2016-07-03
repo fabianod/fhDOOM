@@ -7,6 +7,17 @@ static GLuint currentProgram = 0;
 static GLint defaultUniformLocations[fhUniform::NUM];
 
 const GLint* fhRenderProgram::currentUniformLocations = &defaultUniformLocations[0];
+bool fhRenderProgram::dirty[fhUniform::NUM];
+idVec4 fhRenderProgram::currentColorModulate;
+idVec4 fhRenderProgram::currentColorAdd;
+idVec4 fhRenderProgram::currentDiffuseColor;
+idVec4 fhRenderProgram::currentSpecularColor;
+idVec4 fhRenderProgram::currentDiffuseMatrix[2];
+idVec4 fhRenderProgram::currentSpecularMatrix[2];
+idVec4 fhRenderProgram::currentBumpMatrix[2];
+bool   fhRenderProgram::currentAlphaTestEnabled;
+float  fhRenderProgram::currentAlphaTestThreshold;
+float  fhRenderProgram::currentPomMaxHeight;
 
 #define MAX_GLPROGS 128
 static fhRenderProgram glslPrograms[MAX_GLPROGS];// = { 0 };
@@ -24,16 +35,7 @@ const fhRenderProgram* blendLightProgram = nullptr;
 const fhRenderProgram* vertexColorProgram = nullptr;
 const fhRenderProgram* flatColorProgram = nullptr;
 const fhRenderProgram* intensityProgram = nullptr;
-
-
-static void R_TestUniformLocations(GLuint program)
-{
-	auto rpModelMatrix = glGetUniformLocation(program, "rpModelIndex");
-	auto rpViewMatrix = glGetUniformLocation(program, "rpViewMatrix");
-	auto rpModelViewMatrix = glGetUniformLocation(program, "rpModelViewMatrix");
-	auto rpProjectionMatrix = glGetUniformLocation(program, "rpProjectionMatrix");
-}
-
+const fhRenderProgram* debugDepthProgram = nullptr;
 
 class fhParseException {
 public:
@@ -317,8 +319,8 @@ fhRenderProgram::~fhRenderProgram() {
 }
 
 void fhRenderProgram::Load( const char* vs, const char* fs ) {
-	const int vsLen = min( strlen( vs ), sizeof(vertexShaderName)-1 );
-	const int fsLen = min( strlen( fs ), sizeof(fragmentShaderName)-1 );
+	const int vsLen = Min( strlen( vs ), sizeof(vertexShaderName)-1 );
+	const int fsLen = Min( strlen( fs ), sizeof(fragmentShaderName)-1 );
 	strncpy( vertexShaderName, vs, vsLen );
 	strncpy( fragmentShaderName, fs, fsLen );
 	vertexShaderName[vsLen] = '\0';
@@ -414,6 +416,10 @@ void fhRenderProgram::Load() {
 		uniformLocations[fhUniform::PointLightProjection] = glGetUniformLocation( program, "rpPointlightProjection" );
 		uniformLocations[fhUniform::GlobalLightOrigin] = glGetUniformLocation( program, "rpGlobalLightOrigin" );
 		uniformLocations[fhUniform::ShadowParams] = glGetUniformLocation( program, "rpShadowParams" );
+		uniformLocations[fhUniform::ShadowCoords] = glGetUniformLocation( program, "rpShadowCoords" );
+		uniformLocations[fhUniform::CascadeDistances] = glGetUniformLocation( program, "rpCascadeDistances" );
+		uniformLocations[fhUniform::ShadowMapSize] = glGetUniformLocation( program, "rpShadowMapSize" );
+		uniformLocations[fhUniform::InverseLightRotation] = glGetUniformLocation( program, "rpInverseLightRotation" );
 	} else {
 		for(int i=0; i<fhUniform::NUM; ++i) {
 			uniformLocations[i] = -1;
@@ -436,12 +442,20 @@ void fhRenderProgram::Purge() {
 	ident = 0;
 }
 
-void fhRenderProgram::Bind(bool force) const {
+bool fhRenderProgram::Bind(bool force) const {
 	if(currentProgram != ident || force) {
 		glUseProgram( ident );
 		currentProgram = ident;
 		currentUniformLocations = &this->uniformLocations[0];
+
+		for (int i = 0; i < fhUniform::NUM; ++i) {		
+			dirty[i] = true;
+		}
+
+		return true;
 	}
+
+	return false;
 }
 
 void fhRenderProgram::Unbind() {
@@ -479,6 +493,7 @@ void fhRenderProgram::PurgeAll() {
 void fhRenderProgram::Init() {
 	for(int i=0; i<fhUniform::NUM; ++i) {
 		defaultUniformLocations[i] = -1;
+		dirty[i] = true;
 	}
 	currentUniformLocations = defaultUniformLocations;
 
@@ -495,4 +510,5 @@ void fhRenderProgram::Init() {
 	vertexColorProgram = R_FindGlslProgram( "vertexcolor.vp", "vertexcolor.fp" );
 	flatColorProgram = R_FindGlslProgram( "flatcolor.vp", "flatcolor.fp" );
 	intensityProgram = R_FindGlslProgram( "intensity.vp", "intensity.fp" );
+	debugDepthProgram = R_FindGlslProgram( "debugdepth.vp", "debugdepth.fp" );
 }

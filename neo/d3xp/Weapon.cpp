@@ -1373,7 +1373,7 @@ void idWeapon::UpdateFlashPosition( void ) {
 	trace_t	tr;
 	gameLocal.clip.TracePoint( tr, start, end, MASK_SHOT_RENDERMODEL, owner );
 	// be at least 8 units away from a solid
-	muzzleFlash.origin = tr.endpos - playerViewAxis[0] * 8;
+	muzzleFlash.origin = tr.endpos - playerViewAxis[0] * 8;	
 
 	// put the world muzzle flash on the end of the joint, no matter what
 	GetGlobalJointTransform( false, flashJointWorld, worldMuzzleFlash.origin, worldMuzzleFlash.axis );
@@ -1395,6 +1395,8 @@ void idWeapon::MuzzleFlashLight( void ) {
 	}
 
 	UpdateFlashPosition();
+
+	muzzleFlash.smLodBias = g_muzzleFlashLightLodBias.GetInteger();
 
 	// these will be different each fire
 	muzzleFlash.shaderParms[ SHADERPARM_TIMEOFFSET ]	= -MS2SEC( gameLocal.time );

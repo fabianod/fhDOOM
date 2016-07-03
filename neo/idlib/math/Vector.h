@@ -73,6 +73,7 @@ public:
 	idVec2 &		operator/=( const idVec2 &a );
 	idVec2 &		operator/=( const float a );
 	idVec2 &		operator*=( const float a );
+	idVec2 &		operator*=( const idVec2 &a );
 
 	friend idVec2	operator*( const float a, const idVec2 b );
 
@@ -290,6 +291,13 @@ ID_INLINE idVec2 &idVec2::operator-=( const idVec2 &a ) {
 ID_INLINE idVec2 &idVec2::operator*=( const float a ) {
 	x *= a;
 	y *= a;
+
+	return *this;
+}
+
+ID_INLINE idVec2 &idVec2::operator*=(const idVec2 &a) {
+	x *= a.x;
+	y *= a.y;
 
 	return *this;
 }
@@ -819,7 +827,7 @@ public:
 	float			z;
 	float			w;
 
-	idVec4( void );
+	idVec4() = default;
 	explicit idVec4( const float x, const float y, const float z, const float w );
     explicit idVec4( const idVec3& xyz, const float w );
 	explicit idVec4( const float* xyzw );
@@ -874,9 +882,6 @@ public:
 
 extern idVec4 vec4_origin;
 #define vec4_zero vec4_origin
-
-ID_INLINE idVec4::idVec4( void ) {
-}
 
 ID_INLINE idVec4::idVec4( const float x, const float y, const float z, const float w ) {
 	this->x = x;

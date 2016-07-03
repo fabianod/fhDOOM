@@ -23,7 +23,7 @@ void main(void)
 {
   gl_Position = rpProjectionMatrix * rpModelViewMatrix * vec4(vertex_position, 1.0);  
   
-  vec4 cubecoord = textureMatrix0 * vec4(vertex_position - rpLocalViewOrigin.xyz, 1.0);
+  vec4 cubecoord = vec4(vertex_position - rpLocalViewOrigin.xyz, 1.0);
   result.cubecoord = cubecoord.xyz;
   
   result.normal = (rpModelMatrix * vec4(vertex_normal, 1.0)).xyz;

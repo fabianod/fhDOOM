@@ -18,12 +18,14 @@ out vs_output
   vec3 V;
   vec3 H;
   vec4 shadow[6];
-  vec3 toGlobalLightOrigin;
+  vec3 toLightOrigin;
+  float depth;
+  vec4 worldspacePosition;
 } result;
 
 void main(void)
-{  
-  gl_Position = rpProjectionMatrix * rpModelViewMatrix * vec4(vertex_position, 1.0);  
+{ 
+  gl_Position = rpProjectionMatrix * rpModelViewMatrix * vec4(vertex_position, 1.0);
 
   vec4 vertex_texcoord4 = vec4(vertex_texcoord, 1.0, 1.0);
 
@@ -55,7 +57,8 @@ void main(void)
   result.color = (vertex_color / 255.0) * rpColorModulate + rpColorAdd;  
 
   vec4 worldspace_position = rpModelMatrix * vec4(vertex_position, 1.0); 
-
+  result.worldspacePosition = worldspace_position;
+  
   if(rpShadowMappingMode == 1)
   {
     result.shadow[0] = rpPointlightProjection[0] * worldspace_position;
@@ -63,12 +66,22 @@ void main(void)
     result.shadow[2] = rpPointlightProjection[2] * worldspace_position;
     result.shadow[3] = rpPointlightProjection[3] * worldspace_position;
     result.shadow[4] = rpPointlightProjection[4] * worldspace_position;
-    result.shadow[5] = rpPointlightProjection[5] * worldspace_position;
-  } 
+    result.shadow[5] = rpPointlightProjection[5] * worldspace_position;    
+  }
   else if(rpShadowMappingMode == 2)
   {
     result.shadow[0] = rpSpotlightProjection * worldspace_position;        
+  }  
+  else if(rpShadowMappingMode == 3) 
+  {
+    result.shadow[0] = rpPointlightProjection[0] * worldspace_position;
+    result.shadow[1] = rpPointlightProjection[1] * worldspace_position;
+    result.shadow[2] = rpPointlightProjection[2] * worldspace_position;
+    result.shadow[3] = rpPointlightProjection[3] * worldspace_position;
+    result.shadow[4] = rpPointlightProjection[4] * worldspace_position;
+    result.shadow[5] = rpPointlightProjection[5] * worldspace_position;    
+    result.depth = (rpModelViewMatrix * vec4(vertex_position, 1.0)).z;
   }
 
-  result.toGlobalLightOrigin = (worldspace_position - rpGlobalLightOrigin).xyz;
+  result.toLightOrigin = (rpInverseLightRotation * (worldspace_position - rpGlobalLightOrigin)).xyz;
 }

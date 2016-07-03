@@ -113,11 +113,13 @@ void GL_SelectTexture( int unit ) {
 		return;
 	}
 
-	glActiveTexture( GL_TEXTURE0 + unit );
-	if (!r_glCoreProfile.GetBool()) {
-		glClientActiveTexture( GL_TEXTURE0 + unit );
+	if(glConfig.extDirectStateAccessAvailable) {
+		RB_LogComment( "ignore GL_SelectTexture( %i );\n", unit );
 	}
-	RB_LogComment( "glActiveTexture( %i );\n", unit );
+	else {
+		glActiveTexture( GL_TEXTURE0 + unit );
+		RB_LogComment( "glActiveTexture( %i );\n", unit );
+	}
 
 	backEnd.glState.currenttmu = unit;
 }
@@ -160,36 +162,6 @@ void GL_Cull( int cullType ) {
 
 	backEnd.glState.faceCulling = cullType;
 }
-
-/*
-====================
-GL_TexEnv
-====================
-*/
-void GL_TexEnv( int env ) {
-	tmu_t	*tmu;
-
-	tmu = &backEnd.glState.tmu[backEnd.glState.currenttmu];
-	if ( env == tmu->texEnv ) {
-		return;
-	}
-
-	tmu->texEnv = env;
-
-	switch ( env ) {
-	case GL_COMBINE_EXT:
-	case GL_MODULATE:
-	case GL_REPLACE:
-	case GL_DECAL:
-	case GL_ADD:
-		glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, env );
-		break;
-	default:
-		common->Error( "GL_TexEnv: invalid env '%d' passed\n", env );
-		break;
-	}
-}
-
 
 /*
 ====================
@@ -338,12 +310,131 @@ void GL_State( int stateBits ) {
 	backEnd.glState.glStateBits = stateBits;
 }
 
-void  GL_UseProgram( const fhRenderProgram* program ) {
+bool  GL_UseProgram( const fhRenderProgram* program ) {
   if(program) {
-	  program->Bind();
-  } else {
-	  fhRenderProgram::Unbind();
-  }  
+	  return program->Bind();
+  } 
+
+  fhRenderProgram::Unbind();
+  return false;  
+}
+
+
+static const unsigned vertexLayoutAttributes[] = {
+	//None:
+	0,
+	//Shadow:
+	(1 << fhRenderProgram::vertex_attrib_position_shadow),
+	//ShadowSilhouette:
+	(1 << fhRenderProgram::vertex_attrib_position),
+	//Simple
+	(1 << fhRenderProgram::vertex_attrib_position)
+	| (1 << fhRenderProgram::vertex_attrib_texcoord)
+	| (1 << fhRenderProgram::vertex_attrib_color),
+	//Draw
+	(1 << fhRenderProgram::vertex_attrib_position)
+	| (1 << fhRenderProgram::vertex_attrib_texcoord)
+	| (1 << fhRenderProgram::vertex_attrib_normal)
+	| (1 << fhRenderProgram::vertex_attrib_color)
+	| (1 << fhRenderProgram::vertex_attrib_binormal)
+	| (1 << fhRenderProgram::vertex_attrib_tangent),
+	//DrawPosOnly
+	(1 << fhRenderProgram::vertex_attrib_position),
+	//DrawPosTexOnly
+	(1 << fhRenderProgram::vertex_attrib_position)
+	| (1 << fhRenderProgram::vertex_attrib_texcoord),
+	//DrawPosColorOnly
+	(1 << fhRenderProgram::vertex_attrib_position)
+	| (1 << fhRenderProgram::vertex_attrib_color),
+	//DrawPosColorTexOnly
+	(1 << fhRenderProgram::vertex_attrib_position)
+	| (1 << fhRenderProgram::vertex_attrib_texcoord)
+	| (1 << fhRenderProgram::vertex_attrib_color)
+};
+static_assert(sizeof(vertexLayoutAttributes)/sizeof(vertexLayoutAttributes[0]) == (size_t)fhVertexLayout::COUNT, "");
+
+static fhVertexLayout currentVertexLayout = fhVertexLayout::None;
+
+void GL_SetVertexLayout( fhVertexLayout layout ) {
+	if(currentVertexLayout == layout || layout == fhVertexLayout::None) {
+		return;
+	}
+
+	const unsigned current = vertexLayoutAttributes[(int)currentVertexLayout];
+	const unsigned target = vertexLayoutAttributes[(int)layout];
+
+	for (unsigned i = 0; i < 7 ; ++i) {
+		const unsigned bit = (1 << i);
+		const bool isEnabled = (current & bit) != 0;
+		const bool shouldBeEnabled = (target & bit) != 0;
+
+		if (shouldBeEnabled && !isEnabled) {
+			glEnableVertexAttribArray(i);			
+		}
+		else if (!shouldBeEnabled && isEnabled) {
+			glDisableVertexAttribArray(i);			
+		}
+	}
+
+	currentVertexLayout = layout;
+}
+
+template<typename T>
+static const void* attributeOffset( T offset, const void* attributeOffset )
+{
+	return reinterpret_cast<const void*>((std::ptrdiff_t)offset + (std::ptrdiff_t)attributeOffset);
+}
+
+template<typename T>
+static const void* attributeOffset( T offset, int attributeOffset )
+{
+	return reinterpret_cast<const void*>((std::ptrdiff_t)offset + (std::ptrdiff_t)attributeOffset);
+}
+
+
+
+void GL_SetupVertexAttributes( fhVertexLayout layout, int offset ) {
+	GL_SetVertexLayout( layout );
+
+	switch(currentVertexLayout) {
+	case fhVertexLayout::None:
+		break;
+	case fhVertexLayout::Shadow:
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_position_shadow, 4, GL_FLOAT, false, sizeof(shadowCache_t), attributeOffset(offset, 0) );
+		break;
+	case fhVertexLayout::ShadowSilhouette:
+		glVertexAttribPointer(fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(shadowCache_t), attributeOffset(offset, 0));
+		break;
+	case fhVertexLayout::Simple:
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(fhSimpleVert), attributeOffset( offset, fhSimpleVert::xyzOffset ) );
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(fhSimpleVert), attributeOffset( offset, fhSimpleVert::texcoordOffset ) );
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(fhSimpleVert), attributeOffset( offset, fhSimpleVert::colorOffset ) );
+		break;
+	case fhVertexLayout::DrawPosOnly:
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::xyzOffset) );
+		break;
+	case fhVertexLayout::DrawPosColorOnly:
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::xyzOffset ) );
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::colorOffset ) );
+		break;
+	case fhVertexLayout::DrawPosColorTexOnly:
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::xyzOffset ) );
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::colorOffset ) );
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::texcoordOffset ) );
+		break;
+	case fhVertexLayout::DrawPosTexOnly:
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::xyzOffset ) );
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::texcoordOffset ) );
+		break;
+	case fhVertexLayout::Draw:
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::xyzOffset ) );
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::texcoordOffset ) );
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_normal, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::normalOffset ) );
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::colorOffset ) );
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_binormal, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::binormalOffset ) );
+		glVertexAttribPointer( fhRenderProgram::vertex_attrib_tangent, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset( offset, idDrawVert::tangentOffset ) );
+		break;
+	}
 }
 
 joGLMatrixStack::joGLMatrixStack(int mode) : matrixmode(mode), size(0) {
@@ -352,7 +443,6 @@ joGLMatrixStack::joGLMatrixStack(int mode) : matrixmode(mode), size(0) {
 
 void joGLMatrixStack::Load(const float* m) { 
   memcpy(Data(size), m, sizeof(Matrix));
-  Upload();
 }
 
 void joGLMatrixStack::LoadIdentity() {
@@ -375,7 +465,6 @@ void joGLMatrixStack::Push() {
 void joGLMatrixStack::Pop() {
   if(size > 0) {
     size--;
-    Upload();
   }
 }
 
@@ -473,13 +562,6 @@ void joGLMatrixStack::Get(float* dst) const {
   memcpy(dst, Data(size), sizeof(Matrix));   
 }
 
-void joGLMatrixStack::Upload() const {
-  if(!r_glCoreProfile.GetBool()) {
-    glMatrixMode(matrixmode);
-    glLoadMatrixf(Data(size));
-  }
-}
-
 float* joGLMatrixStack::Data(int StackIndex) {
   return &stack[StackIndex].m[0];
 }
@@ -490,7 +572,6 @@ const float* joGLMatrixStack::Data(int StackIndex) const {
 
 joGLMatrixStack GL_ProjectionMatrix(GL_PROJECTION);
 joGLMatrixStack GL_ModelViewMatrix(GL_MODELVIEW);
-joGLMatrixStack GL_TextureMatrix(GL_TEXTURE);
 
 /*
 ============================================================================
@@ -734,8 +815,8 @@ void RB_ExecuteBackEndCommands( const emptyCommand_t *cmds ) {
 	}
 
 	// go back to the default texture so the editor doesn't mess up a bound image
-	glBindTexture( GL_TEXTURE_2D, 0 );
-	backEnd.glState.tmu[0].current2DMap = -1;
+	//glBindTexture( GL_TEXTURE_2D, 0 );
+	backEnd.glState.tmu[0].currentTexture = 0;
 
 	// stop rendering on this thread
 	backEndFinishTime = Sys_Milliseconds();

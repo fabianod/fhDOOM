@@ -417,6 +417,10 @@ public:
 						// distinction between global and no-self shadows
 	bool				SurfaceCastsShadow( void ) const { return TestMaterialFlag( MF_FORCESHADOWS ) || !TestMaterialFlag( MF_NOSHADOWS ); }
 
+						// returns true if the material will generate soft shadows, not making a
+						// distinction between global and no-self shadows.
+	bool                SurfaceCastsSoftShadow( void ) const;
+
 						// returns true if the material will generate interactions with fog/blend lights
 						// All non-translucent surfaces receive fog unless they are explicitly noFog
 	bool				ReceivesFog( void ) const { return ( IsDrawn() && !noFog && coverage != MC_TRANSLUCENT ); }

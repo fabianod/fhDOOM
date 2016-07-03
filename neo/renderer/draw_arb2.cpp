@@ -97,8 +97,8 @@ void RB_ARB2_RenderSpecialShaderStage( const float* regs, const shaderStage_t* p
 
 	for (int i = 0; i < newStage->numFragmentProgramImages; i++) {
 		if (newStage->fragmentProgramImages[i]) {
-			GL_SelectTexture( i );
-			newStage->fragmentProgramImages[i]->Bind();
+			//GL_SelectTexture( i );
+			newStage->fragmentProgramImages[i]->Bind(i);
 		}
 	}	
 
@@ -174,17 +174,9 @@ void R_LoadARBProgram( int progIndex ) {
 	// scan for the proper header to be the start point, and stamp a 0 in after the end
 
 	if ( progs[progIndex].target == GL_VERTEX_PROGRAM_ARB ) {
-		if ( !glConfig.ARBVertexProgramAvailable ) {
-			common->Printf( ": GL_VERTEX_PROGRAM_ARB not available\n" );
-			return;
-		}
 		start = strstr( (char *)buffer, "!!ARBvp" );
 	}
 	if ( progs[progIndex].target == GL_FRAGMENT_PROGRAM_ARB ) {
-		if ( !glConfig.ARBFragmentProgramAvailable ) {
-			common->Printf( ": GL_FRAGMENT_PROGRAM_ARB not available\n" );
-			return;
-		}
 		start = strstr( (char *)buffer, "!!ARBfp" );
 	}
 	if ( !start ) {

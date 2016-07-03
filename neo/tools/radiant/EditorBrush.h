@@ -34,9 +34,59 @@ struct editorModel_t {
   bool drawBounds;
 };
 
+struct entity_t;
+
+struct brush_t {
+	brush_t	*prev, *next;	// links in active/selected
+	brush_t	*oprev, *onext;	// links in entity
+	brush_t *   list;				//keep a handy link to the list its in
+	entity_t	*owner;
+	idVec3 mins, maxs;
+
+	idVec3	lightCenter;			// for moving the shading center of point lights
+	idVec3	lightRight;
+	idVec3	lightTarget;
+	idVec3	lightUp;
+	idVec3	lightRadius;
+	idVec3	lightOffset;
+	idVec3	lightColor;
+	idVec3	lightStart;
+	idVec3	lightEnd;
+	bool	pointLight;
+	bool	startEnd;
+	int		lightTexture;
+
+	bool	trackLightOrigin;	// this brush is a special case light brush
+	bool	entityModel;
+
+	face_t  *brush_faces;
+
+	//
+	// curve brush extensions
+	// all are derived from brush_faces
+	bool	hiddenBrush;
+	bool	forceWireFrame;
+	bool	forceVisibile;
+
+	patchMesh_t *pPatch;
+	entity_t *pUndoOwner;
+
+	int undoId;						//undo ID
+	int redoId;						//redo ID
+	int ownerId;					//entityId of the owner entity for undo
+
+	int numberId;         // brush number
+
+	idRenderModel	*modelHandle;
+	mutable idRenderModel *animSnapshotModel;
+
+	// brush primitive only
+	idDict	epairs;
+};
+
 brush_t *	Brush_Alloc();
 void		Brush_Free (brush_t *b, bool bRemoveNode = true);
-int			Brush_MemorySize(brush_t *b);
+int			Brush_MemorySize(const brush_t *b);
 void		Brush_MakeSided (int sides);
 void		Brush_MakeSidedCone (int sides);
 void		Brush_Move (brush_t *b, const idVec3 move, bool bSnap = true, bool updateOrigin = true);

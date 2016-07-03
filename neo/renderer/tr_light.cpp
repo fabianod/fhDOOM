@@ -388,36 +388,76 @@ static bool R_PointInFrustum( idVec3 &p, idPlane *planes, int numPlanes ) {
 	return true;
 }
 
-static int RB_SelectShadowMapLod( const idRenderLightLocal* light, const viewDef_t* view ) {
-#if 0
-	if(r_ignore.GetBool()) {
-	}
-#endif
+static idCVar r_smLodBias("r_smLodBias", "0", CVAR_RENDERER | CVAR_INTEGER | CVAR_ARCHIVE, "");
+static idCVar r_smUseScreenSizeLod( "r_smUseScreenSizeLod", "0", CVAR_RENDERER | CVAR_BOOL | CVAR_ARCHIVE, "" );
+static idCVar r_smScreenSizeLod1( "r_smScreenSizeLod1", "0.9", CVAR_RENDERER | CVAR_FLOAT | CVAR_ARCHIVE, "" );
+static idCVar r_smScreenSizeLod2( "r_smScreenSizeLod2", "0.3", CVAR_RENDERER | CVAR_FLOAT | CVAR_ARCHIVE, "" );
 
-	const float thresholds[] = { 750, 400, 150, 75, 0 };
-	const int numThresholds = sizeof(thresholds) / sizeof(thresholds[0]);
-	int	index = 0;
-	float size = light->GetMaximumCenterToEdgeDistance();
+static int R_SelectShadowMapLod( const viewLight_t* vlight, const viewDef_t* view ) {
 
+	int lod = Max(r_smLodBias.GetInteger(), vlight->lightDef->parms.smLodBias);
 
-	for (int i = 0; i<numThresholds; ++i) {
-		if (thresholds[i] > size) {
-			break;
+	if(r_smUseScreenSizeLod.GetBool()) {
+		idVec3 corners[8];
+		vlight->lightDef->frustumTris->bounds.ToPoints(corners);
+
+		idVec2 minimum = idVec2(32000, 32000);
+		idVec2 maximum = idVec2(-32000, -32000);
+
+		for(int i=0; i<8; ++i) {
+			idVec3 tmp;
+			R_GlobalToNormalizedDeviceCoordinates(corners[i], tmp);
+
+			minimum.x = Min(minimum.x, tmp.x);
+			minimum.y = Min(minimum.y, tmp.y);
+
+			maximum.x = Max( maximum.x, tmp.x );
+			maximum.y = Max( maximum.y, tmp.y );
+		};
+
+		idVec2 screensize( (maximum.x - minimum.x) * 0.5 , (maximum.y - minimum.y) * 0.5 );
+
+		float area = screensize.x * screensize.y;
+
+		float maxRadius = Max(Max(vlight->lightDef->parms.lightRadius.x, vlight->lightDef->parms.lightRadius.y), vlight->lightDef->parms.lightRadius.z);
+
+		if(area < r_smScreenSizeLod1.GetFloat()) {
+			lod++;
 		}
-		else {
-			index++;
+
+		if (area < r_smScreenSizeLod2.GetFloat()) {
+			lod++;
+		}		
+	}
+	else {
+		const idRenderLightLocal* light = vlight->lightDef;
+
+		const float thresholds[] = { 750, 400, 150, 75, 0 };
+		const int numThresholds = sizeof(thresholds) / sizeof(thresholds[0]);
+	
+		float size = light->GetMaximumCenterToEdgeDistance();
+
+		for (int i = 0; i<numThresholds; ++i) {
+			if (thresholds[i] > size) {
+				break;
+			}
+			else {
+				lod++;
+			}
+		}
+
+		const float distance = (light->parms.origin - view->renderView.vieworg).Length();
+
+		if(distance > 400) {
+			lod++;
+		}
+
+		if(distance > 800) {
+			lod++;
 		}
 	}
 
-	const float distance = (light->parms.origin - view->renderView.vieworg).Length();
-
-	if(distance > 400)
-		index++;
-
-	if(distance > 800)
-		index++;
-
-	return index;
+	return  Min(2, Max(0, lod));	
 }
 
 /*
@@ -440,7 +480,7 @@ viewLight_t *R_SetLightDefViewLight( idRenderLightLocal *light ) {
 	vLight = (viewLight_t *)R_ClearedFrameAlloc( sizeof( *vLight ) );
 	vLight->lightDef = light;
 
-	vLight->shadowMapLod = RB_SelectShadowMapLod(light, tr.viewDef);
+	vLight->shadowMapLod = R_SelectShadowMapLod(vLight, tr.viewDef);
 
 	// the scissorRect will be expanded as the light bounds is accepted into visible portal chains
 	vLight->scissorRect.Clear();
@@ -474,6 +514,11 @@ viewLight_t *R_SetLightDefViewLight( idRenderLightLocal *light ) {
 	vLight->falloffImage = light->falloffImage;
 	vLight->lightShader = light->lightShader;
 	vLight->shaderRegisters = NULL;		// allocated and evaluated in R_AddLightSurfaces
+
+	for(int i=0; i<6; ++i) {
+		vLight->farClip[i] = light->shadowMapFrustums[i].farPlaneDistance;
+		vLight->nearClip[i] = light->shadowMapFrustums[i].nearPlaneDistance;
+	}
 
 	// link the view light
 	vLight->next = tr.viewDef->viewLights;
@@ -975,7 +1020,7 @@ void R_AddLightSurfaces( void ) {
 		}
 
 		// add the prelight shadows for the static world geometry
-		if ( light->parms.prelightModel && r_useOptimizedShadows.GetBool() ) {
+		if ( light->ShadowMode() == shadowMode_t::StencilShadow && light->parms.prelightModel && r_useOptimizedShadows.GetBool() ) {
 
 			if ( !light->parms.prelightModel->NumSurfaces() ) {
 				common->Error( "no surfs in prelight model '%s'", light->parms.prelightModel->Name() );
@@ -1005,8 +1050,9 @@ void R_AddLightSurfaces( void ) {
 			vertexCache.Touch( tri->shadowCache );
 
 			if ( !tri->indexCache && r_useIndexBuffers.GetBool() ) {
-        tri->indexCache = vertexCache.Alloc( tri->indexes, tri->numIndexes * sizeof( tri->indexes[0] ), true );				
+				tri->indexCache = vertexCache.Alloc( tri->indexes, tri->numIndexes * sizeof( tri->indexes[0] ), true );				
 			}
+
 			if ( tri->indexCache ) {
 				vertexCache.Touch( tri->indexCache );
 			}

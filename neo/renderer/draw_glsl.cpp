@@ -4,38 +4,14 @@
 #include "tr_local.h"
 #include "RenderProgram.h"
 #include "ImmediateMode.h"
+#include "RenderList.h"
 
 idCVar r_pomEnabled("r_pomEnabled", "0", CVAR_ARCHIVE | CVAR_RENDERER | CVAR_BOOL, "POM enabled or disabled");
 idCVar r_pomMaxHeight("r_pomMaxHeight", "0.045", CVAR_ARCHIVE | CVAR_RENDERER | CVAR_FLOAT, "maximum height for POM");
 idCVar r_shading("r_shading", "0", CVAR_ARCHIVE | CVAR_RENDERER | CVAR_INTEGER, "0 = Doom3 (Blinn-Phong), 1 = Phong");
 idCVar r_specularExp("r_specularExp", "10", CVAR_ARCHIVE | CVAR_RENDERER | CVAR_FLOAT, "exponent used for specularity");
 idCVar r_specularScale("r_specularScale", "1", CVAR_ARCHIVE | CVAR_RENDERER | CVAR_FLOAT, "scale specularity globally for all surfaces");
-idCVar r_amdWorkaround("r_amdWorkaround", "1", CVAR_ARCHIVE | CVAR_RENDERER | CVAR_INTEGER, "temporary: enable workaround for AMD driver issues: 0=Off, 1=Enabled for AMD, 2=Always enabled");
-
-
-/*
-====================
-GL_SelectTextureNoClient
-====================
-*/
-static void GL_SelectTextureNoClient(int unit) {
-  backEnd.glState.currenttmu = unit;
-  glActiveTexture(GL_TEXTURE0 + unit);
-  RB_LogComment("glActiveTexture( %i )\n", unit);
-}
-
-/*
-====================
-attributeOffset
-
-Calculate attribute offset by a (global) offset and (local) per-attribute offset
-====================
-*/
-template<typename T>
-static const void* attributeOffset(T offset, const void* attributeOffset)
-{
-  return reinterpret_cast<const void*>((std::ptrdiff_t)offset + (std::ptrdiff_t)attributeOffset);
-}
+idCVar r_renderList("r_renderlist", "1", CVAR_ARCHIVE | CVAR_RENDERER | CVAR_BOOL, "use render list");
 
 /*
 =====================
@@ -44,60 +20,32 @@ RB_GLSL_BlendLight
 =====================
 */
 static void RB_GLSL_BlendLight(const drawSurf_t *surf) {
-  const srfTriangles_t *tri;
+	const srfTriangles_t*  tri = surf->geo;
 
-  tri = surf->geo;
+  if(backEnd.currentSpace != surf->space)
+  {
+	idPlane	lightProject[4];
 
-  fhRenderProgram::SetModelViewMatrix(GL_ModelViewMatrix.Top());
-  fhRenderProgram::SetProjectionMatrix(GL_ProjectionMatrix.Top());
-
-  if (backEnd.currentSpace != surf->space) {
-    idPlane	lightProject[4];
-    int		i;
-
-    for (i = 0; i < 4; i++) {
-      R_GlobalPlaneToLocal(surf->space->modelMatrix, backEnd.vLight->lightProject[i], lightProject[i]);
-    }
+	for (int i = 0; i < 4; i++) {
+		R_GlobalPlaneToLocal(surf->space->modelMatrix, backEnd.vLight->lightProject[i], lightProject[i]);
+	}
 
 	fhRenderProgram::SetBumpMatrix(lightProject[0].ToVec4(), lightProject[1].ToVec4());
 	fhRenderProgram::SetSpecularMatrix(lightProject[2].ToVec4(), idVec4());
 	fhRenderProgram::SetDiffuseMatrix(lightProject[3].ToVec4(), idVec4());
-/*
-    GL_SelectTexture(0);
-    glTexGenfv(GL_S, GL_OBJECT_PLANE, lightProject[0].ToFloatPtr());
-    glTexGenfv(GL_T, GL_OBJECT_PLANE, lightProject[1].ToFloatPtr());
-    glTexGenfv(GL_Q, GL_OBJECT_PLANE, lightProject[2].ToFloatPtr());
-
-    GL_SelectTexture(1);
-    glTexGenfv(GL_S, GL_OBJECT_PLANE, lightProject[3].ToFloatPtr());
-*/
   }
 
   // this gets used for both blend lights and shadow draws
   if (tri->ambientCache) {
-    //idDrawVert	*ac = (idDrawVert *)vertexCache.Position(tri->ambientCache);
-    //glVertexPointer(3, GL_FLOAT, sizeof(idDrawVert), ac->xyz.ToFloatPtr());
-    //     
     int offset = vertexCache.Bind(tri->ambientCache);
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::xyzOffset));
+	GL_SetupVertexAttributes(fhVertexLayout::DrawPosOnly, offset);
   }
   else if (tri->shadowCache) {
-    //shadowCache_t	*sc = (shadowCache_t *)vertexCache.Position(tri->shadowCache);
-    //glVertexPointer(3, GL_FLOAT, sizeof(shadowCache_t), sc->xyz.ToFloatPtr());
     int offset = vertexCache.Bind(tri->shadowCache);
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position_shadow);
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_position_shadow, 3, GL_FLOAT, false, sizeof(shadowCache_t), attributeOffset(offset, 0));
+	GL_SetupVertexAttributes(fhVertexLayout::Shadow, offset);
   }
 
   RB_DrawElementsWithCounters(tri);
-
-  if (tri->ambientCache) {   
-    glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-  }
-  else if (tri->shadowCache) {
-    glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_position_shadow);
-  }
 }
 
 
@@ -129,8 +77,7 @@ void RB_GLSL_BlendLight(const drawSurf_t *drawSurfs, const drawSurf_t *drawSurfs
   regs = backEnd.vLight->shaderRegisters;
 
   // texture 1 will get the falloff texture
-  GL_SelectTexture(1);  
-  backEnd.vLight->falloffImage->Bind();
+  backEnd.vLight->falloffImage->Bind(1);
 
   for (i = 0; i < lightShader->GetNumStages(); i++) {
     stage = lightShader->GetStage(i);
@@ -142,12 +89,7 @@ void RB_GLSL_BlendLight(const drawSurf_t *drawSurfs, const drawSurf_t *drawSurfs
     GL_State(GLS_DEPTHMASK | stage->drawStateBits | GLS_DEPTHFUNC_EQUAL);
 
     // texture 0 will get the projected texture
-    GL_SelectTexture(0);
-    stage->texture.image->Bind();
-
-    if (stage->texture.hasMatrix) {
-      RB_LoadShaderTextureMatrix(regs, &stage->texture);
-    }
+    stage->texture.image->Bind(0);
 
     // get the modulate values from the light, including alpha, unlike normal lights
     backEnd.lightColor[0] = regs[stage->color.registers[0]];
@@ -158,11 +100,6 @@ void RB_GLSL_BlendLight(const drawSurf_t *drawSurfs, const drawSurf_t *drawSurfs
 
     RB_RenderDrawSurfChainWithFunction(drawSurfs, RB_GLSL_BlendLight);
     RB_RenderDrawSurfChainWithFunction(drawSurfs2, RB_GLSL_BlendLight);
-
-    if (stage->texture.hasMatrix) {
-      GL_SelectTexture(0);
-      GL_TextureMatrix.LoadIdentity();
-    }
   }
 }
 
@@ -242,10 +179,8 @@ static void RB_GLSL_RenderTriangleSurface(const srfTriangles_t *tri) {
 
   auto offset = vertexCache.Bind(tri->ambientCache);
 
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-  glVertexAttribPointer(fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, 0));
+  GL_SetupVertexAttributes(fhVertexLayout::DrawPosOnly, offset);  
   RB_DrawElementsWithCounters(tri);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
 }
 
 static idPlane	fogPlanes[4];
@@ -257,38 +192,32 @@ RB_T_BasicFog
 =====================
 */
 static void RB_GLSL_BasicFog(const drawSurf_t *surf) {
-  fhRenderProgram::SetModelViewMatrix(GL_ModelViewMatrix.Top());
-  fhRenderProgram::SetProjectionMatrix(GL_ProjectionMatrix.Top());
 
-  if (backEnd.currentSpace != surf->space) {
-    idPlane	local;
+	if(backEnd.currentSpace != surf->space)
+	{
+		idPlane	local;
 
-    GL_SelectTexture(0);
+		R_GlobalPlaneToLocal(surf->space->modelMatrix, fogPlanes[0], local);
+		local[3] += 0.5;
+		const idVec4 bumpMatrixS = local.ToVec4();    
 
-    R_GlobalPlaneToLocal(surf->space->modelMatrix, fogPlanes[0], local);
-    local[3] += 0.5;
-	const idVec4 bumpMatrixS = local.ToVec4();    
+		local[0] = local[1] = local[2] = 0; local[3] = 0.5;
 
-    local[0] = local[1] = local[2] = 0; local[3] = 0.5;
+		const idVec4 bumpMatrixT = local.ToVec4();
+		fhRenderProgram::SetBumpMatrix(bumpMatrixS, bumpMatrixT);
 
-	const idVec4 bumpMatrixT = local.ToVec4();
-    fhRenderProgram::SetBumpMatrix(bumpMatrixS, bumpMatrixT);
-
-    GL_SelectTexture(1);
-
-    // GL_S is constant per viewer
-    R_GlobalPlaneToLocal(surf->space->modelMatrix, fogPlanes[2], local);
-    local[3] += FOG_ENTER;
-	const idVec4 diffuseMatrixT = local.ToVec4();   
+		// GL_S is constant per viewer
+		R_GlobalPlaneToLocal(surf->space->modelMatrix, fogPlanes[2], local);
+		local[3] += FOG_ENTER;
+		const idVec4 diffuseMatrixT = local.ToVec4();   
 	
-    R_GlobalPlaneToLocal(surf->space->modelMatrix, fogPlanes[3], local);
-	const idVec4 diffuseMatrixS = local.ToVec4();
+		R_GlobalPlaneToLocal(surf->space->modelMatrix, fogPlanes[3], local);
+		const idVec4 diffuseMatrixS = local.ToVec4();
 
-	fhRenderProgram::SetDiffuseMatrix(diffuseMatrixS, diffuseMatrixT);
-    
-  }
+		fhRenderProgram::SetDiffuseMatrix(diffuseMatrixS, diffuseMatrixT);
+	}
 
-  RB_GLSL_RenderTriangleSurface(surf->geo);
+	RB_GLSL_RenderTriangleSurface(surf->geo);
 }
 
 /*
@@ -357,8 +286,7 @@ void RB_GLSL_FogPass(const drawSurf_t *drawSurfs, const drawSurf_t *drawSurfs2) 
   }  
 
   // texture 0 is the falloff image
-  GL_SelectTexture(0);
-  globalImages->fogImage->Bind();
+  globalImages->fogImage->Bind(0);
 
   fogPlanes[0][0] = a * backEnd.viewDef->worldSpace.modelViewMatrix[2];
   fogPlanes[0][1] = a * backEnd.viewDef->worldSpace.modelViewMatrix[6];
@@ -371,8 +299,7 @@ void RB_GLSL_FogPass(const drawSurf_t *drawSurfs, const drawSurf_t *drawSurfs2) 
   fogPlanes[1][3] = a * backEnd.viewDef->worldSpace.modelViewMatrix[12];
 
   // texture 1 is the entering plane fade correction
-  GL_SelectTexture(1);
-  globalImages->fogEnterImage->Bind();
+  globalImages->fogEnterImage->Bind(1);
 
   // T will get a texgen for the fade plane, which is always the "top" plane on unrotated lights
   fogPlanes[2][0] = 0.001f * backEnd.vLight->fogPlane[0];
@@ -400,13 +327,6 @@ void RB_GLSL_FogPass(const drawSurf_t *drawSurfs, const drawSurf_t *drawSurfs2) 
   GL_Cull(CT_BACK_SIDED);
   RB_RenderDrawSurfChainWithFunction(&ds, RB_GLSL_BasicFog);
   GL_Cull(CT_FRONT_SIDED);
-
-  GL_SelectTexture(1);
-  globalImages->BindNull();
-
-  GL_SelectTexture(0);
-  
-  GL_UseProgram(nullptr);
 }
 
 
@@ -441,8 +361,8 @@ static void RB_GLSL_Shadow(const drawSurf_t *surf) {
 
     assert(shadowProgram);
     fhRenderProgram::SetLocalLightOrigin(localLight);
-    fhRenderProgram::SetProjectionMatrix(GL_ProjectionMatrix.Top());
-    fhRenderProgram::SetModelViewMatrix(GL_ModelViewMatrix.Top());
+    fhRenderProgram::SetProjectionMatrix(backEnd.viewDef->projectionMatrix);
+    fhRenderProgram::SetModelViewMatrix(surf->space->modelViewMatrix);
   }
 
   tri = surf->geo;
@@ -452,8 +372,10 @@ static void RB_GLSL_Shadow(const drawSurf_t *surf) {
   }
 
   const auto offset = vertexCache.Bind(tri->shadowCache);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position_shadow);
-  glVertexAttribPointer(fhRenderProgram::vertex_attrib_position_shadow, 4, GL_FLOAT, false, sizeof(shadowCache_t), attributeOffset(offset, 0));
+
+  GL_SetupVertexAttributes(fhVertexLayout::Shadow, offset);
+  //GL_SetVertexLayout(fhVertexLayout::Shadow);  
+  //glVertexAttribPointer(fhRenderProgram::vertex_attrib_position_shadow, 4, GL_FLOAT, false, sizeof(shadowCache_t), attributeOffset(offset, 0));
 
   // we always draw the sil planes, but we may not need to draw the front or rear caps
   int	numIndexes;
@@ -493,9 +415,10 @@ static void RB_GLSL_Shadow(const drawSurf_t *surf) {
   if (glConfig.depthBoundsTestAvailable && r_useDepthBoundsTest.GetBool()) {
     glDepthBoundsEXT(surf->scissorRect.zmin, surf->scissorRect.zmax);
   }
-
+/*
   // debug visualization
   if (r_showShadows.GetInteger()) {
+
     if (r_showShadows.GetInteger() == 3) {
       if (external) {
         glColor3f(0.1 / backEnd.overBright, 1 / backEnd.overBright, 0.1 / backEnd.overBright);
@@ -533,34 +456,30 @@ static void RB_GLSL_Shadow(const drawSurf_t *surf) {
     GL_Cull(CT_TWO_SIDED);
     RB_DrawShadowElementsWithCounters(tri, numIndexes);
     GL_Cull(CT_FRONT_SIDED);
-    glEnable(GL_STENCIL_TEST);
-    glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_position_shadow);
-
+    glEnable(GL_STENCIL_TEST);    
     return;
   }
-
+*/
   // patent-free work around
   if (!external) {
     // "preload" the stencil buffer with the number of volumes
     // that get clipped by the near or far clip plane
-    glStencilOp(GL_KEEP, tr.stencilDecr, tr.stencilDecr);
+    glStencilOp(GL_KEEP, GL_DECR_WRAP, GL_DECR_WRAP);
     GL_Cull(CT_FRONT_SIDED);
     RB_DrawShadowElementsWithCounters(tri, numIndexes);
-    glStencilOp(GL_KEEP, tr.stencilIncr, tr.stencilIncr);
+    glStencilOp(GL_KEEP, GL_INCR_WRAP, GL_INCR_WRAP);
     GL_Cull(CT_BACK_SIDED);
     RB_DrawShadowElementsWithCounters(tri, numIndexes);
   }
 
   // traditional depth-pass stencil shadows
-  glStencilOp(GL_KEEP, GL_KEEP, tr.stencilIncr);
+  glStencilOp(GL_KEEP, GL_KEEP, GL_INCR_WRAP);
   GL_Cull(CT_FRONT_SIDED);
   RB_DrawShadowElementsWithCounters(tri, numIndexes);
 
-  glStencilOp(GL_KEEP, GL_KEEP, tr.stencilDecr);
+  glStencilOp(GL_KEEP, GL_KEEP, GL_DECR_WRAP);
   GL_Cull(CT_BACK_SIDED);
   RB_DrawShadowElementsWithCounters(tri, numIndexes);
-
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_position_shadow);
 }
 
 
@@ -586,13 +505,9 @@ void RB_GLSL_StencilShadowPass(const drawSurf_t *drawSurfs) {
     return;
   }
 
-  //glDisable(GL_VERTEX_PROGRAM_ARB);
-  //glDisable(GL_FRAGMENT_PROGRAM_ARB);
   GL_UseProgram(shadowProgram);
 
   RB_LogComment("---------- RB_StencilShadowPass ----------\n");
-
-  globalImages->BindNull();
 
   // for visualizing the shadows
   if (r_showShadows.GetInteger()) {
@@ -635,200 +550,6 @@ void RB_GLSL_StencilShadowPass(const drawSurf_t *drawSurfs) {
 
   glStencilFunc(GL_GEQUAL, 128, 255);
   glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
-
-  GL_UseProgram(nullptr);
-}
-
-
-
-/*
-==================
-RB_GLSL_FillDepthBuffer
-==================
-*/
-void RB_GLSL_FillDepthBuffer(const drawSurf_t *surf) {
-  int			stage;
-  const idMaterial	*shader;
-  const shaderStage_t *pStage;
-  const float	*regs;
-  float		color[4];
-  const srfTriangles_t	*tri;
-
-  tri = surf->geo;
-  shader = surf->material;
-
-  // update the clip plane if needed
-  if (backEnd.viewDef->numClipPlanes && surf->space != backEnd.currentSpace) {
-    GL_SelectTexture(1);
-
-    idPlane	plane;
-
-    R_GlobalPlaneToLocal(surf->space->modelMatrix, backEnd.viewDef->clipPlanes[0], plane);
-    plane[3] += 0.5;	// the notch is in the middle
-    glTexGenfv(GL_S, GL_OBJECT_PLANE, plane.ToFloatPtr());
-    GL_SelectTexture(0);
-  }
-
-  if (!shader->IsDrawn()) {
-    return;
-  }
-
-  // some deforms may disable themselves by setting numIndexes = 0
-  if (!tri->numIndexes) {
-    return;
-  }
-
-  // translucent surfaces don't put anything in the depth buffer and don't
-  // test against it, which makes them fail the mirror clip plane operation
-  if (shader->Coverage() == MC_TRANSLUCENT) {
-    return;
-  }
-
-  if (!tri->ambientCache) {
-    common->Printf("RB_T_FillDepthBuffer: !tri->ambientCache\n");
-    return;
-  }
-
-  // get the expressions for conditionals / color / texcoords
-  regs = surf->shaderRegisters;
-
-  // if all stages of a material have been conditioned off, don't do anything
-  for (stage = 0; stage < shader->GetNumStages(); stage++) {
-    pStage = shader->GetStage(stage);
-    // check the stage enable condition
-    if (regs[pStage->conditionRegister] != 0) {
-      break;
-    }
-  }
-  if (stage == shader->GetNumStages()) {
-    return;
-  }
-
-  // set polygon offset if necessary
-  if (shader->TestMaterialFlag(MF_POLYGONOFFSET)) {
-    glEnable(GL_POLYGON_OFFSET_FILL);
-    glPolygonOffset(r_offsetFactor.GetFloat(), r_offsetUnits.GetFloat() * shader->GetPolygonOffset());
-  }
-
-  // subviews will just down-modulate the color buffer by overbright
-  if (shader->GetSort() == SS_SUBVIEW) {
-    GL_State(GLS_SRCBLEND_DST_COLOR | GLS_DSTBLEND_ZERO | GLS_DEPTHFUNC_LESS);
-    color[0] =
-      color[1] =
-      color[2] = (1.0 / backEnd.overBright);
-    color[3] = 1;
-  }
-  else {
-    // others just draw black
-    color[0] = 0;
-    color[1] = 0;
-    color[2] = 0;
-    color[3] = 1;
-  }
-
-  const auto offset = vertexCache.Bind(tri->ambientCache);
-  glVertexAttribPointer(fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::xyzOffset));
-  glVertexAttribPointer(fhRenderProgram::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::texcoordOffset));
-  fhRenderProgram::SetModelViewMatrix(GL_ModelViewMatrix.Top());
-  fhRenderProgram::SetProjectionMatrix(GL_ProjectionMatrix.Top());
-
-  bool drawSolid = false;
-
-  if (shader->Coverage() == MC_OPAQUE) {
-    drawSolid = true;
-  }
-
-  // we may have multiple alpha tested stages
-  if (shader->Coverage() == MC_PERFORATED) {
-    // if the only alpha tested stages are condition register omitted,
-    // draw a normal opaque surface
-    bool	didDraw = false;
-
-    // perforated surfaces may have multiple alpha tested stages
-    for (stage = 0; stage < shader->GetNumStages(); stage++) {
-      pStage = shader->GetStage(stage);
-
-      if (!pStage->hasAlphaTest) {
-        continue;
-      }
-
-      // check the stage enable condition
-      if (regs[pStage->conditionRegister] == 0) {
-        continue;
-      }
-
-      // if we at least tried to draw an alpha tested stage,
-      // we won't draw the opaque surface
-      didDraw = true;
-
-      // set the alpha modulate
-      color[3] = regs[pStage->color.registers[3]];
-
-      // skip the entire stage if alpha would be black
-      if (color[3] <= 0) {
-        continue;
-      }
-
-      // bind the texture
-      pStage->texture.image->Bind();      
-
-	  fhRenderProgram::SetAlphaTestEnabled(true);
-	  fhRenderProgram::SetAlphaTestThreshold(regs[pStage->alphaTestRegister]);      
-      fhRenderProgram::SetDiffuseColor(idVec4(color));
-
-      // set texture matrix and texGens      
-
-      if (pStage->privatePolygonOffset && !surf->material->TestMaterialFlag(MF_POLYGONOFFSET)) {
-        glEnable(GL_POLYGON_OFFSET_FILL);
-        glPolygonOffset(r_offsetFactor.GetFloat(), r_offsetUnits.GetFloat() * pStage->privatePolygonOffset);
-      }
-
-      if (pStage->texture.hasMatrix) {
-        idVec4 textureMatrix[2];
-        RB_GetShaderTextureMatrix(surf->shaderRegisters, &pStage->texture, textureMatrix);
-		fhRenderProgram::SetDiffuseMatrix(textureMatrix[0],  textureMatrix[1]);
-      }
-      
-
-      // draw it
-      RB_DrawElementsWithCounters(tri);
-
-      //RB_FinishStageTexturing(pStage, surf, ac);
-      {
-        if (pStage->privatePolygonOffset && !surf->material->TestMaterialFlag(MF_POLYGONOFFSET)) {
-          glDisable(GL_POLYGON_OFFSET_FILL);
-        }
-
-		fhRenderProgram::SetDiffuseMatrix(idVec4::identityS, idVec4::identityT);
-		fhRenderProgram::SetAlphaTestEnabled(false);
-      }
-    }
-    //glDisable(GL_ALPHA_TEST);
-    if (!didDraw) {
-      drawSolid = true;
-    }
-  }
-
-  // draw the entire surface solid
-  if (drawSolid) {
-    fhRenderProgram::SetDiffuseColor(idVec4(color));    
-    globalImages->whiteImage->Bind();
-
-    // draw it
-    RB_DrawElementsWithCounters(tri);
-  }
-
-
-  // reset polygon offset
-  if (shader->TestMaterialFlag(MF_POLYGONOFFSET)) {
-    glDisable(GL_POLYGON_OFFSET_FILL);
-  }
-
-  // reset blending
-  if (shader->GetSort() == SS_SUBVIEW) {
-    GL_State(GLS_DEPTHFUNC_LESS);
-  }
-
 }
 
 
@@ -841,57 +562,13 @@ to force the alpha test to fail when behind that clip plane
 =====================
 */
 void RB_GLSL_FillDepthBuffer(drawSurf_t **drawSurfs, int numDrawSurfs) {
-  assert(depthProgram);
+	fhTimeElapsed timeElapsed( &backEnd.stats.groups[backEndGroup::DepthPrepass].time );
+	backEnd.stats.groups[backEndGroup::DepthPrepass].passes += 1;
 
-  // if we are just doing 2D rendering, no need to fill the depth buffer
-  if (!backEnd.viewDef->viewEntitys) {
-    return;
-  }
-
-  RB_LogComment("---------- RB_GLSL_FillDepthBuffer ----------\n");
-
-  // enable the second texture for mirror plane clipping if needed
-  if (backEnd.viewDef->numClipPlanes) {
-    GL_SelectTexture(1);
-    globalImages->alphaNotchImage->Bind();
-    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-    glEnable(GL_TEXTURE_GEN_S);
-    glTexCoord2f(1, 0.5);
-  }
-
-  // the first texture will be used for alpha tested surfaces
-  GL_SelectTexture(0);
-
-  // decal surfaces may enable polygon offset
-  glPolygonOffset(r_offsetFactor.GetFloat(), r_offsetUnits.GetFloat());
-
-  GL_State(GLS_DEPTHFUNC_LESS);
-
-  // Enable stencil test if we are going to be using it for shadows.
-  // If we didn't do this, it would be legal behavior to get z fighting
-  // from the ambient pass and the light passes.
-  glEnable(GL_STENCIL_TEST);
-  glStencilFunc(GL_ALWAYS, 1, 255);
-
-  GL_UseProgram(depthProgram);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_texcoord);
-
-  RB_RenderDrawSurfListWithFunction(drawSurfs, numDrawSurfs, RB_GLSL_FillDepthBuffer);
-
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_texcoord);
-  GL_UseProgram(nullptr);
-
-  if (backEnd.viewDef->numClipPlanes) {
-    GL_SelectTexture(1);
-    globalImages->BindNull();
-    glDisable(GL_TEXTURE_GEN_S);
-    GL_SelectTexture(0);
-  }
-
+	DepthRenderList depthRenderList;
+	depthRenderList.AddDrawSurfaces( drawSurfs, numDrawSurfs );
+	depthRenderList.Submit();
 }
-
 
 
 /*
@@ -899,75 +576,57 @@ void RB_GLSL_FillDepthBuffer(drawSurf_t **drawSurfs, int numDrawSurfs) {
 RB_GLSL_RenderSpecialShaderStage
 =====================
 */
-void RB_GLSL_RenderSpecialShaderStage(const float* regs, const shaderStage_t* pStage, glslShaderStage_t* glslStage, const srfTriangles_t	*tri) {
+void RB_GLSL_RenderSpecialShaderStage(const float* regs, const shaderStage_t* pStage, glslShaderStage_t* glslStage, const drawSurf_t *surf) {  
+	assert(surf);
+	const srfTriangles_t* tri = surf->geo;
+	GL_State(pStage->drawStateBits);
+	GL_UseProgram(glslStage->program);
 
-  const auto offset = vertexCache.Bind(tri->ambientCache);
+	const auto offset = vertexCache.Bind(tri->ambientCache);  
+	GL_SetupVertexAttributes(fhVertexLayout::Draw, offset);
 
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_texcoord);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_normal);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_color);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_binormal);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_tangent);
+	fhRenderProgram::SetModelViewMatrix(surf->space->modelViewMatrix);	
 
-  glVertexAttribPointer(fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::xyzOffset));
-  glVertexAttribPointer(fhRenderProgram::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::texcoordOffset));
-  glVertexAttribPointer(fhRenderProgram::vertex_attrib_normal, 3, GL_FLOAT, false, sizeof(idDrawVert),   attributeOffset(offset, idDrawVert::normalOffset));
-  glVertexAttribPointer(fhRenderProgram::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::colorOffset));
-  glVertexAttribPointer(fhRenderProgram::vertex_attrib_binormal, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::binormalOffset));
-  glVertexAttribPointer(fhRenderProgram::vertex_attrib_tangent, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::tangentOffset));
+	if (surf->space->modelDepthHack != 0.0f) {
+		RB_EnterModelDepthHack( surf->space->modelDepthHack );
+	}
+	else if (surf->space->weaponDepthHack) {
+		RB_EnterWeaponDepthHack();
+	}
+	else {
+		fhRenderProgram::SetProjectionMatrix(backEnd.viewDef->projectionMatrix);
+	}
 
-  GL_State(pStage->drawStateBits);
-  GL_UseProgram(glslStage->program);
+	for (int i = 0; i < glslStage->numShaderParms; i++) {
+		idVec4 parm;
+		parm[0] = regs[glslStage->shaderParms[i][0]];
+		parm[1] = regs[glslStage->shaderParms[i][1]];
+		parm[2] = regs[glslStage->shaderParms[i][2]];
+		parm[3] = regs[glslStage->shaderParms[i][3]];
+		fhRenderProgram::SetShaderParm(i, parm);    
+	}
 
-  for (int i = 0; i < glslStage->numShaderParms; i++) {
-    idVec4 parm;
-    parm[0] = regs[glslStage->shaderParms[i][0]];
-    parm[1] = regs[glslStage->shaderParms[i][1]];
-    parm[2] = regs[glslStage->shaderParms[i][2]];
-    parm[3] = regs[glslStage->shaderParms[i][3]];
-	fhRenderProgram::SetShaderParm(i, parm);    
-  }
+	// current render
+	const int	w = backEnd.viewDef->viewport.x2 - backEnd.viewDef->viewport.x1 + 1;
+	const int	h = backEnd.viewDef->viewport.y2 - backEnd.viewDef->viewport.y1 + 1;
 
-//  glUniformMatrix4fv(glslProgramDef_t::uniform_modelMatrix, 1, false, surf->space->modelMatrix);
-  fhRenderProgram::SetModelViewMatrix(GL_ModelViewMatrix.Top());
-  fhRenderProgram::SetProjectionMatrix(GL_ProjectionMatrix.Top());
+	fhRenderProgram::SetCurrentRenderSize(
+		idVec2(globalImages->currentRenderImage->uploadWidth, globalImages->currentRenderImage->uploadHeight),
+		idVec2(w, h));
 
-  // current render
-  const int	w = backEnd.viewDef->viewport.x2 - backEnd.viewDef->viewport.x1 + 1;
-  const int	h = backEnd.viewDef->viewport.y2 - backEnd.viewDef->viewport.y1 + 1;
+	// set textures
+	for (int i = 0; i < glslStage->numShaderMaps; i++) {
+		if (glslStage->shaderMap[i]) {
+			glslStage->shaderMap[i]->Bind(i);
+		}
+	}
 
-  fhRenderProgram::SetCurrentRenderSize(
-	  idVec2(globalImages->currentRenderImage->uploadWidth, globalImages->currentRenderImage->uploadHeight),
-	  idVec2(w, h));
+	// draw it
+	RB_DrawElementsWithCounters(tri);
 
-  // set textures
-  for (int i = 0; i < glslStage->numShaderMaps; i++) {
-    if (glslStage->shaderMap[i]) {
-      GL_SelectTexture(i);
-      glslStage->shaderMap[i]->Bind();
-    }
-  }
-
-  // draw it
-  RB_DrawElementsWithCounters(tri);
-
-  for (int i = 0; i < glslStage->numShaderMaps; i++) {
-    if (glslStage->shaderMap[i]) {
-      GL_SelectTexture(i);
-      globalImages->BindNull();
-    }
-  }
-
-  GL_UseProgram(nullptr);
-  GL_SelectTexture(0);
-
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_texcoord);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_normal);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_color);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_binormal);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_tangent);
+	if (surf->space->modelDepthHack != 0.0f || surf->space->weaponDepthHack) {
+		RB_LeaveDepthHack();
+	}
 }
 
 
@@ -1013,12 +672,13 @@ void RB_GLSL_RenderShaderStage(const drawSurf_t *surf, const shaderStage_t* pSta
   
   const auto offset = vertexCache.Bind(surf->geo->ambientCache); 
 
+  bool programWasReset = false;
 
   if (pStage->texture.texgen == TG_DIFFUSE_CUBE) {
     return;
   }
   else if (pStage->texture.texgen == TG_SKYBOX_CUBE || pStage->texture.texgen == TG_WOBBLESKY_CUBE) {
-    GL_UseProgram(skyboxProgram);    
+    programWasReset = GL_UseProgram(skyboxProgram);    
 
     idMat4 textureMatrix = mat4_identity;
     if (pStage->texture.texgen == TG_WOBBLESKY_CUBE) {
@@ -1031,11 +691,7 @@ void RB_GLSL_RenderShaderStage(const drawSurf_t *surf, const shaderStage_t* pSta
     fhRenderProgram::SetLocalViewOrigin(localViewOrigin);
 	fhRenderProgram::SetTextureMatrix(textureMatrix.ToFloatPtr());    
 
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position);    
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_color);
-
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::xyzOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::colorOffset));    
+	GL_SetupVertexAttributes(fhVertexLayout::DrawPosColorOnly, offset);
   }
   else if (pStage->texture.texgen == TG_SCREEN) {
     return;
@@ -1045,7 +701,7 @@ void RB_GLSL_RenderShaderStage(const drawSurf_t *surf, const shaderStage_t* pSta
   }
   else if (pStage->texture.texgen == TG_REFLECT_CUBE) {
 
-    GL_UseProgram(bumpyEnvProgram);
+    programWasReset = GL_UseProgram(bumpyEnvProgram);
 
     idMat4 textureMatrix = mat4_identity;
 
@@ -1055,19 +711,7 @@ void RB_GLSL_RenderShaderStage(const drawSurf_t *surf, const shaderStage_t* pSta
 	fhRenderProgram::SetLocalViewOrigin(localViewOrigin);        
 	fhRenderProgram::SetTextureMatrix(textureMatrix.ToFloatPtr());
 
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_texcoord);
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_normal);
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_color);
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_binormal);
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_tangent);
-
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::xyzOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::texcoordOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_normal, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::normalOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::colorOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_binormal, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::binormalOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_tangent, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::tangentOffset));
+	GL_SetupVertexAttributes(fhVertexLayout::Draw, offset);
 
     // set the texture matrix
     idVec4 textureMatrixST[2];
@@ -1081,16 +725,14 @@ void RB_GLSL_RenderShaderStage(const drawSurf_t *surf, const shaderStage_t* pSta
     textureMatrixST[1][3] = 0;
 
     // see if there is also a bump map specified
-    GL_SelectTextureNoClient(2);
     if(const shaderStage_t *bumpStage = surf->material->GetBumpStage()) {
       RB_GetShaderTextureMatrix(surf->shaderRegisters, &bumpStage->texture, textureMatrixST);
 
       //void RB_GetShaderTextureMatrix( const float *shaderRegisters, const textureStage_t *texture, idVec4 matrix[2] );
-      bumpStage->texture.image->Bind();
+      bumpStage->texture.image->Bind(2);
     } else {
-      globalImages->flatNormalMap->Bind();
+      globalImages->flatNormalMap->Bind(2);
     }
-    GL_SelectTextureNoClient(0);
 
 	fhRenderProgram::SetBumpMatrix(textureMatrixST[0], textureMatrixST[1]);
   }
@@ -1118,35 +760,73 @@ void RB_GLSL_RenderShaderStage(const drawSurf_t *surf, const shaderStage_t* pSta
     }
 
     if(depthBlendMode != DBM_OFF && depthBlendRange > 0.0f) {
-      GL_UseProgram(depthblendProgram);
-      GL_SelectTexture(7);
-      globalImages->currentDepthImage->Bind();
+      programWasReset = GL_UseProgram(depthblendProgram);
+
+      globalImages->currentDepthImage->Bind(2);
 
       fhRenderProgram::SetDepthBlendRange(depthBlendRange);
       fhRenderProgram::SetDepthBlendMode(static_cast<int>(depthBlendMode));      
 	  fhRenderProgram::SetClipRange(backEnd.viewDef->viewFrustum.GetNearDistance(), backEnd.viewDef->viewFrustum.GetFarDistance());      
     }
     else {
-      GL_UseProgram(defaultProgram);
+      programWasReset = GL_UseProgram(defaultProgram);
     }
 
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_texcoord);
-    glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_color);
-
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::xyzOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::texcoordOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::colorOffset));
+	GL_SetupVertexAttributes(fhVertexLayout::DrawPosColorTexOnly, offset);
   }
 
-  GL_SelectTexture(1);
-
   // bind the texture
-  RB_BindVariableStageImage(&pStage->texture, surf->shaderRegisters);
-  GL_SelectTexture(0);
+  if (pStage->texture.cinematic) {
+	  if (r_skipDynamicTextures.GetBool()) {
+		  globalImages->defaultImage->Bind(1);		  
+	  }
+	  else {
+		  // offset time by shaderParm[7] (FIXME: make the time offset a parameter of the shader?)
+		  // We make no attempt to optimize for multiple identical cinematics being in view, or
+		  // for cinematics going at a lower framerate than the renderer.
+		  cinData_t	cin = pStage->texture.cinematic->ImageForTime( (int)(1000 * (backEnd.viewDef->floatTime + backEnd.viewDef->renderView.shaderParms[11])) );
 
+		  if (cin.image) {
+			  globalImages->cinematicImage->UploadScratch( 1, cin.image, cin.imageWidth, cin.imageHeight );
+		  }
+		  else {
+			  globalImages->blackImage->Bind(1);
+		  }
+	  }
+  }
+  else {
+	  //FIXME: see why image is invalid
+	  if (pStage->texture.image) {
+		  pStage->texture.image->Bind(1);
+	  }
+  }
+  
   // set the state
-  GL_State(pStage->drawStateBits);
+  GL_State(pStage->drawStateBits);  
+
+	if(programWasReset) {
+		// current render
+		const int	w = backEnd.viewDef->viewport.x2 - backEnd.viewDef->viewport.x1 + 1;
+		const int	h = backEnd.viewDef->viewport.y2 - backEnd.viewDef->viewport.y1 + 1;
+		fhRenderProgram::SetCurrentRenderSize(
+			idVec2( globalImages->currentRenderImage->uploadWidth, globalImages->currentRenderImage->uploadHeight ),
+			idVec2( w, h ) );
+	}
+  
+	if (surf->space->modelDepthHack != 0.0f) {
+		RB_EnterModelDepthHack( surf->space->modelDepthHack );
+	}
+	else if (surf->space->weaponDepthHack) {
+		RB_EnterWeaponDepthHack();
+	}
+	else if (programWasReset) {
+		fhRenderProgram::SetProjectionMatrix(backEnd.viewDef->projectionMatrix);
+	}
+
+	if(surf->space != backEnd.currentSpace || programWasReset) {
+		fhRenderProgram::SetModelMatrix( surf->space->modelMatrix );
+		fhRenderProgram::SetModelViewMatrix( surf->space->modelViewMatrix );	
+	}  
 
   switch (pStage->vertexColor) {
   case SVC_IGNORE:
@@ -1161,18 +841,7 @@ void RB_GLSL_RenderShaderStage(const drawSurf_t *surf, const shaderStage_t* pSta
 	fhRenderProgram::SetColorModulate(idVec4::negOne);
 	fhRenderProgram::SetColorAdd(idVec4::one);
     break;
-  }  
-  
-  fhRenderProgram::SetModelMatrix(surf->space->modelMatrix);
-  fhRenderProgram::SetModelViewMatrix(GL_ModelViewMatrix.Top());
-  fhRenderProgram::SetProjectionMatrix(GL_ProjectionMatrix.Top());
-
-  // current render
-  const int	w = backEnd.viewDef->viewport.x2 - backEnd.viewDef->viewport.x1 + 1;
-  const int	h = backEnd.viewDef->viewport.y2 - backEnd.viewDef->viewport.y1 + 1;
-  fhRenderProgram::SetCurrentRenderSize(
-	  idVec2(globalImages->currentRenderImage->uploadWidth, globalImages->currentRenderImage->uploadHeight), 
-	  idVec2(w,h));  
+  }     
 
   // set privatePolygonOffset if necessary
   if (pStage->privatePolygonOffset) {
@@ -1195,25 +864,19 @@ void RB_GLSL_RenderShaderStage(const drawSurf_t *surf, const shaderStage_t* pSta
       RB_GetShaderTextureMatrix(surf->shaderRegisters, &pStage->texture, textureMatrix);
 	}
 
-	fhRenderProgram::SetBumpMatrix(textureMatrix[0], textureMatrix[1]);
-  
-    GL_SelectTextureNoClient(1);
-    pStage->texture.image->Bind();
-    GL_SelectTextureNoClient(0);
+	fhRenderProgram::SetBumpMatrix(textureMatrix[0], textureMatrix[1]);  
+
+    pStage->texture.image->Bind(1);    
   }
 
   fhRenderProgram::SetDiffuseColor(idVec4(color));
 
   // draw it
-  RB_DrawElementsWithCounters(surf->geo);
+  RB_DrawElementsWithCounters(surf->geo);  
 
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_texcoord);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_normal);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_color);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_binormal);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_tangent);
-  GL_UseProgram(nullptr);
+  if (surf->space->modelDepthHack != 0.0f || surf->space->weaponDepthHack) {
+	  RB_LeaveDepthHack();
+  }
 }
 
 
@@ -1222,67 +885,75 @@ void RB_GLSL_RenderShaderStage(const drawSurf_t *surf, const shaderStage_t* pSta
 RB_GLSL_DrawInteraction
 ==================
 */
-void	RB_GLSL_DrawInteraction(const drawInteraction_t *din) {  
+void RB_GLSL_DrawInteraction(const drawInteraction_t *din) {  
 
-	fhRenderProgram::SetModelMatrix(din->surf->space->modelMatrix);
-	fhRenderProgram::SetModelViewMatrix(GL_ModelViewMatrix.Top());
-	fhRenderProgram::SetProjectionMatrix(GL_ProjectionMatrix.Top());
-	fhRenderProgram::SetLocalLightOrigin(din->localLightOrigin);
-	fhRenderProgram::SetLocalViewOrigin(din->localViewOrigin);  
+	// change the matrix and light projection vectors if needed
+	if (din->surf->space != backEnd.currentSpace) {		
+		fhRenderProgram::SetModelViewMatrix( din->surf->space->modelViewMatrix );
+		fhRenderProgram::SetModelMatrix(din->surf->space->modelMatrix);				
+
+		if (din->surf->space->modelDepthHack != 0.0f) {
+			RB_EnterModelDepthHack( din->surf->space->modelDepthHack );
+		}
+		else 	if (din->surf->space->weaponDepthHack) {
+			RB_EnterWeaponDepthHack();
+		}
+		else if (!backEnd.currentSpace || backEnd.currentSpace->modelDepthHack || backEnd.currentSpace->weaponDepthHack) {
+			RB_LeaveDepthHack();
+		}
+
+		backEnd.currentSpace = din->surf->space;
+	}
+
+	fhRenderProgram::SetLocalViewOrigin( din->localViewOrigin );
+	fhRenderProgram::SetLocalLightOrigin( din->localLightOrigin );
 	fhRenderProgram::SetLightProjectionMatrix( din->lightProjection[0], din->lightProjection[1], din->lightProjection[2] );
-	fhRenderProgram::SetLightFallOff(din->lightProjection[3]);
+	fhRenderProgram::SetLightFallOff( din->lightProjection[3] );	
 	fhRenderProgram::SetBumpMatrix(din->bumpMatrix[0], din->bumpMatrix[1]);
 	fhRenderProgram::SetDiffuseMatrix(din->diffuseMatrix[0], din->diffuseMatrix[1]);
 	fhRenderProgram::SetSpecularMatrix(din->specularMatrix[0], din->specularMatrix[1]);
 
+	switch (din->vertexColor) {
+	case SVC_IGNORE:
+		fhRenderProgram::SetColorModulate( idVec4::zero );
+		fhRenderProgram::SetColorAdd( idVec4::one );
+		break;
+	case SVC_MODULATE:
+		fhRenderProgram::SetColorModulate( idVec4::one );
+		fhRenderProgram::SetColorAdd( idVec4::zero );
+		break;
+	case SVC_INVERSE_MODULATE:
+		fhRenderProgram::SetColorModulate( idVec4::negOne );
+		fhRenderProgram::SetColorAdd( idVec4::one );
+		break;
+	}
 
-  switch (din->vertexColor) {
-  case SVC_IGNORE:
-	  fhRenderProgram::SetColorModulate( idVec4::zero );
-	  fhRenderProgram::SetColorAdd( idVec4::one );
-	  break;
-  case SVC_MODULATE:
-	  fhRenderProgram::SetColorModulate( idVec4::one );
-	  fhRenderProgram::SetColorAdd( idVec4::zero );
-	  break;
-  case SVC_INVERSE_MODULATE:
-	  fhRenderProgram::SetColorModulate( idVec4::negOne );
-	  fhRenderProgram::SetColorAdd( idVec4::one );
-	  break;
-  }
+	fhRenderProgram::SetDiffuseColor(din->diffuseColor);
+	fhRenderProgram::SetSpecularColor(din->specularColor * r_specularScale.GetFloat());
 
-  fhRenderProgram::SetDiffuseColor(din->diffuseColor);
-  fhRenderProgram::SetSpecularColor(din->specularColor * r_specularScale.GetFloat());
+	if( r_pomEnabled.GetBool() && din->specularImage->hasAlpha ) {
+		fhRenderProgram::SetPomMaxHeight(r_pomMaxHeight.GetFloat());
+	} else {
+		fhRenderProgram::SetPomMaxHeight(-1);	  
+	}
 
-  if( r_pomEnabled.GetBool() && din->specularImage->hasAlpha ) {
-	  fhRenderProgram::SetPomMaxHeight(r_pomMaxHeight.GetFloat());
-  } else {
-	  fhRenderProgram::SetPomMaxHeight(-1);	  
-  }  
+	// texture 1 will be the per-surface bump map  
+	din->bumpImage->Bind(1);
 
+	// texture 2 will be the light falloff texture  
+	din->lightFalloffImage->Bind(2);
 
-  // texture 1 will be the per-surface bump map
-  GL_SelectTextureNoClient(1);
-  din->bumpImage->Bind();
+	// texture 3 will be the light projection texture  
+	din->lightImage->Bind(3);
 
-  // texture 2 will be the light falloff texture
-  GL_SelectTextureNoClient(2);
-  din->lightFalloffImage->Bind();
+	// texture 4 is the per-surface diffuse map  
+	din->diffuseImage->Bind(4);
 
-  // texture 3 will be the light projection texture
-  GL_SelectTextureNoClient(3);
-  din->lightImage->Bind();
+	// texture 5 is the per-surface specular map  
+	din->specularImage->Bind(5);
 
-  // texture 4 is the per-surface diffuse map
-  GL_SelectTextureNoClient(4);
-  din->diffuseImage->Bind();
-
-  // texture 5 is the per-surface specular map
-  GL_SelectTextureNoClient(5);
-  din->specularImage->Bind();
-
-  // draw it
-  RB_DrawElementsWithCounters(din->surf->geo);
+	// draw it
+	RB_DrawElementsWithCounters(din->surf->geo);
 }
 
 /*
@@ -1292,117 +963,101 @@ RB_GLSL_CreateDrawInteractions
 =============
 */
 void RB_GLSL_CreateDrawInteractions(const drawSurf_t *surf) {
-  assert(interactionProgram);
+	assert(interactionProgram);
 
-  if (!surf) {
-    return;
-  }
-
-  // perform setup here that will be constant for all interactions
-  GL_State(GLS_SRCBLEND_ONE | GLS_DSTBLEND_ONE | GLS_DEPTHMASK | backEnd.depthFunc);  
-
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_texcoord);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_normal);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_color);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_binormal);
-  glEnableVertexAttribArray(fhRenderProgram::vertex_attrib_tangent);
-
-  auto configureInteractionProgram = [&](){
-	  GL_UseProgram( interactionProgram );
-
-	  fhRenderProgram::SetShading( r_shading.GetInteger() );
-	  fhRenderProgram::SetSpecularExp( r_specularExp.GetFloat() );
-	  fhRenderProgram::SetProjectionMatrix( GL_ProjectionMatrix.Top() );
-
-	  if (backEnd.vLight->lightDef->ShadowMode() == shadowMode_t::ShadowMap) {
-		  const idVec4 globalLightOrigin = idVec4( backEnd.vLight->globalLightOrigin, 1 );
-		  fhRenderProgram::SetGlobalLightOrigin( globalLightOrigin );
-
-		  const float shadowBrightness = backEnd.vLight->lightDef->ShadowBrightness();
-		  const float shadowSoftness = backEnd.vLight->lightDef->ShadowSoftness();
-		  fhRenderProgram::SetShadowParams( idVec4( shadowSoftness, shadowBrightness, 0, 0 ) );
-
-		  if (backEnd.vLight->lightDef->parms.pointLight) {
-			  //point light
-			  fhRenderProgram::SetShadowMappingMode( 1 );
-			  fhRenderProgram::SetPointLightProjectionMatrices( &backEnd.shadowViewProjection[0][0] );
-		  }
-		  else {
-			  //projected light
-			  fhRenderProgram::SetShadowMappingMode( 2 );
-			  fhRenderProgram::SetSpotLightProjectionMatrix( backEnd.testProjectionMatrix );
-		  }
-	  }
-	  else {
-		  //no shadows
-		  fhRenderProgram::SetShadowMappingMode( 0 );
-	  }
-  };  
-
-  configureInteractionProgram();
-
-  for (; surf; surf = surf->nextOnLight) {
-    // perform setup here that will not change over multiple interaction passes
-
-    // set the vertex pointers
-    const auto offset = vertexCache.Bind(surf->geo->ambientCache);
-
-	//TODO(johl): WARNING: this is hacky workaround for AMD drivers.
-	//            Why do we have to re-configure the program between multiple interaction draws?
-	//            is this a AMD driver bug or do we do something stupid here?
-	//            Works fine on nVidia without this hack... what about Intel?
-	const int amdWorkaround = r_amdWorkaround.GetInteger();
-	if((glConfig.vendorisAMD && amdWorkaround == 1) || amdWorkaround == 2) {
-		GL_UseProgram( nullptr );
-		configureInteractionProgram();
+	if (!surf) {
+		return;
 	}
 
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_position, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::xyzOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_texcoord, 2, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::texcoordOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_normal, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::normalOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_color, 4, GL_UNSIGNED_BYTE, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::colorOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_binormal, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::binormalOffset));
-    glVertexAttribPointer(fhRenderProgram::vertex_attrib_tangent, 3, GL_FLOAT, false, sizeof(idDrawVert), attributeOffset(offset, idDrawVert::tangentOffset));
-
-    // this may cause RB_ARB2_DrawInteraction to be exacuted multiple
-    // times with different colors and images if the surface or light have multiple layers
-    RB_CreateSingleDrawInteractions(surf, RB_GLSL_DrawInteraction);
-  }
+	// perform setup here that will be constant for all interactions
+	GL_State(GLS_SRCBLEND_ONE | GLS_DSTBLEND_ONE | GLS_DEPTHMASK | backEnd.depthFunc);
   
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_position);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_texcoord);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_normal);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_color);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_binormal);
-  glDisableVertexAttribArray(fhRenderProgram::vertex_attrib_tangent);
+	GL_UseProgram( interactionProgram );
 
-  // disable features
-#if 0
-  GL_SelectTextureNoClient(6);
-  globalImages->BindNull();
-#endif
+	fhRenderProgram::SetShading( r_shading.GetInteger() );
+	fhRenderProgram::SetSpecularExp( r_specularExp.GetFloat() );
 
-  GL_SelectTextureNoClient(5);
-  globalImages->BindNull();
+	if (backEnd.vLight->lightDef->ShadowMode() == shadowMode_t::ShadowMap) {
+		const idVec4 globalLightOrigin = idVec4( backEnd.vLight->globalLightOrigin, 1 );
+		fhRenderProgram::SetGlobalLightOrigin( globalLightOrigin );
 
-  GL_SelectTextureNoClient(4);
-  globalImages->BindNull();
+		const float shadowBrightness = backEnd.vLight->lightDef->ShadowBrightness();
+		const float shadowSoftness = backEnd.vLight->lightDef->ShadowSoftness();
+		fhRenderProgram::SetShadowParams( idVec4( shadowSoftness, shadowBrightness, backEnd.vLight->nearClip[0], backEnd.vLight->farClip[0] ) );
 
-  GL_SelectTextureNoClient(3);
-  globalImages->BindNull();
+		if (backEnd.vLight->lightDef->parms.pointLight) {
+			//point light
+			fhRenderProgram::SetShadowMappingMode( 1 );
+			fhRenderProgram::SetPointLightProjectionMatrices( backEnd.vLight->viewProjectionMatrices[0].ToFloatPtr() );
+		}
+		else {
+			//projected light
+			fhRenderProgram::SetShadowMappingMode( 2 );
+			fhRenderProgram::SetSpotLightProjectionMatrix( backEnd.vLight->viewProjectionMatrices[0].ToFloatPtr() );
+		}
+	}
+	else {
+		//no shadows
+		fhRenderProgram::SetShadowMappingMode( 0 );
+	}
 
-  GL_SelectTextureNoClient(2);
-  globalImages->BindNull();
+	backEnd.currentSpace = nullptr;
+	for (; surf; surf = surf->nextOnLight) {
+		// perform setup here that will not change over multiple interaction passes
 
-  GL_SelectTextureNoClient(1);
-  globalImages->BindNull();
+		// set the vertex pointers
+		const auto offset = vertexCache.Bind(surf->geo->ambientCache);
+		GL_SetupVertexAttributes(fhVertexLayout::Draw, offset);
 
-  backEnd.glState.currenttmu = -1;
-  GL_SelectTexture(0);
+		// this may cause RB_ARB2_DrawInteraction to be exacuted multiple
+		// times with different colors and images if the surface or light have multiple layers
+		RB_CreateSingleDrawInteractions(surf, RB_GLSL_DrawInteraction);
+	}  
 
-  GL_UseProgram(nullptr);
+	//just make sure no depth hack is active anymore.
+	if (backEnd.currentSpace && (backEnd.currentSpace->modelDepthHack || backEnd.currentSpace->weaponDepthHack)) {
+		RB_LeaveDepthHack();		
+	}
+	backEnd.currentSpace = nullptr;	
 }
+
+
+
+/*
+=================
+RB_SubmittInteraction
+=================
+*/
+static void RB_SubmittInteraction( drawInteraction_t *din, InteractionList& interactionList ) {
+	if (!din->bumpImage) {
+		return;
+	}
+
+	if (!din->diffuseImage || r_skipDiffuse.GetBool()) {
+		din->diffuseImage = globalImages->blackImage;
+	}
+	if (!din->specularImage || r_skipSpecular.GetBool() || din->ambientLight) {
+		din->specularImage = globalImages->blackImage;
+	}
+	if (!din->bumpImage || r_skipBump.GetBool()) {
+		din->bumpImage = globalImages->flatNormalMap;
+	}
+
+	// if we wouldn't draw anything, don't call the Draw function
+	if (
+		((din->diffuseColor[0] > 0 ||
+		din->diffuseColor[1] > 0 ||
+		din->diffuseColor[2] > 0) && din->diffuseImage != globalImages->blackImage)
+		|| ((din->specularColor[0] > 0 ||
+		din->specularColor[1] > 0 ||
+		din->specularColor[2] > 0) && din->specularImage != globalImages->blackImage)) {
+
+		interactionList.Append(*din);
+	}
+}
+
+static idList<viewLight_t*> shadowCastingViewLights[3];
+static idList<viewLight_t*> batch;
 
 
 
@@ -1411,73 +1066,152 @@ void RB_GLSL_CreateDrawInteractions(const drawSurf_t *surf) {
 RB_GLSL_DrawInteractions
 ==================
 */
-void RB_GLSL_DrawInteractions(void) {
-  viewLight_t		*vLight;
-  const idMaterial	*lightShader;
+void RB_GLSL_DrawInteractions( void ) {
 
-  //
-  // for each light, perform adding and shadowing
-  //
-  for (vLight = backEnd.viewDef->viewLights; vLight; vLight = vLight->next) {
-    backEnd.vLight = vLight;
+	InteractionList interactionList;
 
-    // do fogging later
-    if (vLight->lightShader->IsFogLight()) {
-      continue;
-    }
-    if (vLight->lightShader->IsBlendLight()) {
-      continue;
-    }
+	batch.SetNum( 0 );
+	shadowCastingViewLights[0].SetNum( 0 );
+	shadowCastingViewLights[1].SetNum( 0 );
+	shadowCastingViewLights[2].SetNum( 0 );
 
-    if (!vLight->localInteractions && !vLight->globalInteractions
-      && !vLight->translucentInteractions) {
-      continue;
-    }	
+	for (viewLight_t* vLight = backEnd.viewDef->viewLights; vLight; vLight = vLight->next) {
+		// do fogging later
+		if (vLight->lightShader->IsFogLight()) {
+			continue;
+		}
 
-	if(vLight->lightDef->ShadowMode() == shadowMode_t::ShadowMap)
-		RB_RenderShadowMaps(vLight);
+		if (vLight->lightShader->IsBlendLight()) {
+			continue;
+		}
 
-	
-    lightShader = vLight->lightShader;
+		if (!vLight->localInteractions && !vLight->globalInteractions && !vLight->translucentInteractions) {
+			continue;
+		}
 
-    // clear the stencil buffer if needed
-    if (vLight->globalShadows || vLight->localShadows) {
-      backEnd.currentScissor = vLight->scissorRect;
-      if (r_useScissor.GetBool()) {
-        glScissor(backEnd.viewDef->viewport.x1 + backEnd.currentScissor.x1,
-          backEnd.viewDef->viewport.y1 + backEnd.currentScissor.y1,
-          backEnd.currentScissor.x2 + 1 - backEnd.currentScissor.x1,
-          backEnd.currentScissor.y2 + 1 - backEnd.currentScissor.y1);
-      }
-      glClear(GL_STENCIL_BUFFER_BIT);
-    }
-    else {
-      // no shadows, so no need to read or write the stencil buffer
-      // we might in theory want to use GL_ALWAYS instead of disabling
-      // completely, to satisfy the invarience rules
-      glStencilFunc(GL_ALWAYS, 128, 255);
-    }
+		if (vLight->lightDef->ShadowMode() == shadowMode_t::ShadowMap) {
+			int lod = Min( 2, Max( vLight->shadowMapLod, 0 ) );
+			shadowCastingViewLights[lod].Append( vLight );
+		}
+		else {
+			//light does not require shadow maps to be rendered. Render this light with the first batch.
+			batch.Append( vLight );
+		}
+	}
 
-	RB_GLSL_StencilShadowPass(vLight->globalShadows);
-	RB_GLSL_CreateDrawInteractions(vLight->localInteractions);
-	RB_GLSL_StencilShadowPass(vLight->localShadows);
-	RB_GLSL_CreateDrawInteractions(vLight->globalInteractions);
+	while(true) {
+		if (shadowCastingViewLights[0].Num() != 0 || shadowCastingViewLights[1].Num() != 0 || shadowCastingViewLights[2].Num() != 0) {
+			GL_UseProgram( shadowmapProgram );
+			glStencilFunc( GL_ALWAYS, 0, 255 );
+			GL_State( GLS_DEPTHFUNC_LESS | GLS_SRCBLEND_ONE | GLS_DSTBLEND_ZERO );	// make sure depth mask is off before clear
+			glDepthMask( GL_TRUE );
+			glEnable( GL_DEPTH_TEST );
 
-    // translucent surfaces never get stencil shadowed
-    if (r_skipTranslucent.GetBool()) {
-      continue;
-    }
+			globalImages->BindNull( 6 );
+			globalImages->shadowmapFramebuffer->Bind();
+			glViewport( 0, 0, globalImages->shadowmapFramebuffer->GetWidth(), globalImages->shadowmapFramebuffer->GetHeight() );
+			glScissor( 0, 0, globalImages->shadowmapFramebuffer->GetWidth(), globalImages->shadowmapFramebuffer->GetHeight() );
+			glClear( GL_DEPTH_BUFFER_BIT );
 
-    glStencilFunc(GL_ALWAYS, 128, 255);
+			for(int lod = 0; lod < 3; ++lod) {
+				idList<viewLight_t*>& lights = shadowCastingViewLights[lod];
 
-    backEnd.depthFunc = GLS_DEPTHFUNC_LESS;
-    RB_GLSL_CreateDrawInteractions(vLight->translucentInteractions);
+				while (lights.Num() > 0) {
+					backEnd.vLight = lights.Last();
 
-    backEnd.depthFunc = GLS_DEPTHFUNC_EQUAL;
-  }
+					if (RB_RenderShadowMaps(backEnd.vLight)) {	
+						//shadow map was rendered successfully, so add the light to the next batch
+						batch.Append( backEnd.vLight );			
+						lights.RemoveLast();
+					}
+					else {
+						break;
+					}
+				}
+			}
 
-  // disable stencil shadow test
-  glStencilFunc(GL_ALWAYS, 128, 255);
+			globalImages->defaultFramebuffer->Bind();
+			globalImages->shadowmapImage->Bind( 6 );
+			globalImages->jitterImage->Bind( 7 );
+		}
+
+		glDisable( GL_POLYGON_OFFSET_FILL );
+		glEnable( GL_CULL_FACE );
+		glFrontFace( GL_CCW );
+
+		//reset viewport 
+		glViewport( tr.viewportOffset[0] + backEnd.viewDef->viewport.x1,
+			tr.viewportOffset[1] + backEnd.viewDef->viewport.y1,
+			backEnd.viewDef->viewport.x2 + 1 - backEnd.viewDef->viewport.x1,
+			backEnd.viewDef->viewport.y2 + 1 - backEnd.viewDef->viewport.y1 );
+
+		// the scissor may be smaller than the viewport for subviews
+		glScissor( tr.viewportOffset[0] + backEnd.viewDef->viewport.x1 + backEnd.viewDef->scissor.x1,
+			tr.viewportOffset[1] + backEnd.viewDef->viewport.y1 + backEnd.viewDef->scissor.y1,
+			backEnd.viewDef->scissor.x2 + 1 - backEnd.viewDef->scissor.x1,
+			backEnd.viewDef->scissor.y2 + 1 - backEnd.viewDef->scissor.y1 );
+		backEnd.currentScissor = backEnd.viewDef->scissor;
+
+		for(int i=0; i<batch.Num(); ++i) {
+			viewLight_t* vLight = batch[i];
+			backEnd.vLight = vLight;
+		
+			backEnd.stats.groups[backEndGroup::Interaction].passes += 1;
+			fhTimeElapsed timeElapsed( &backEnd.stats.groups[backEndGroup::Interaction].time );
+			
+			const idMaterial* lightShader = vLight->lightShader;
+
+			// clear the stencil buffer if needed
+			if (vLight->globalShadows || vLight->localShadows) {
+				backEnd.currentScissor = vLight->scissorRect;
+				if (r_useScissor.GetBool()) {
+					glScissor( backEnd.viewDef->viewport.x1 + backEnd.currentScissor.x1,
+						backEnd.viewDef->viewport.y1 + backEnd.currentScissor.y1,
+						backEnd.currentScissor.x2 + 1 - backEnd.currentScissor.x1,
+						backEnd.currentScissor.y2 + 1 - backEnd.currentScissor.y1 );
+				}
+				glClear( GL_STENCIL_BUFFER_BIT );
+			}
+			else {
+				// no shadows, so no need to read or write the stencil buffer
+				// we might in theory want to use GL_ALWAYS instead of disabling
+				// completely, to satisfy the invarience rules
+				glStencilFunc( GL_ALWAYS, 128, 255 );
+			}
+
+			RB_GLSL_StencilShadowPass( vLight->globalShadows );
+			interactionList.Clear();
+			interactionList.AddDrawSurfacesOnLight( vLight->localInteractions );
+			interactionList.Submit();
+
+			RB_GLSL_StencilShadowPass( vLight->localShadows );
+			interactionList.Clear();
+			interactionList.AddDrawSurfacesOnLight( vLight->globalInteractions );
+			interactionList.Submit();
+
+			// translucent surfaces never get stencil shadowed
+			if (r_skipTranslucent.GetBool()) {
+				continue;
+			}
+
+			glStencilFunc( GL_ALWAYS, 128, 255 );
+
+			backEnd.depthFunc = GLS_DEPTHFUNC_LESS;
+
+			interactionList.Clear();
+			interactionList.AddDrawSurfacesOnLight( vLight->translucentInteractions );
+			interactionList.Submit();
+
+			backEnd.depthFunc = GLS_DEPTHFUNC_EQUAL;
+		}
+
+		RB_FreeAllShadowMaps();
+		batch.SetNum(0);
+
+		if (shadowCastingViewLights[0].Num() == 0 && shadowCastingViewLights[1].Num() == 0 && shadowCastingViewLights[2].Num() == 0) {
+			break;
+		}
+	}
+
+	glStencilFunc( GL_ALWAYS, 128, 255 );
 }
-
-

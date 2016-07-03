@@ -457,6 +457,7 @@ void idProjectile::Think( void ) {
 
 	// add the light
 	if ( renderLight.lightRadius.x > 0.0f && g_projectileLights.GetBool() ) {
+		renderLight.smLodBias = g_projectileLightLodBias.GetInteger();
 		renderLight.origin = GetPhysics()->GetOrigin() + GetPhysics()->GetAxis() * lightOffset;
 		renderLight.axis = GetPhysics()->GetAxis();
 		if ( ( lightDefHandle != -1 ) ) {

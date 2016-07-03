@@ -192,6 +192,7 @@ ENDIF()
 ######################## QT TOOLS #############################################
 ###############################################################################
 
+if(WIN32)
 if (NOT "${QTDIR}" STREQUAL "")
   set(CMAKE_PREFIX_PATH ${QTDIR})
   message("QTDIR from options: ${QTDIR}")
@@ -244,6 +245,7 @@ if(Qt5Widgets_FOUND)
 else()
   message(WARNING "Qt5 not found. Qt based tools are excluded from the build")
 endif()
+endif()
 
 ###############################################################################
 ######################## ENGINE ###############################################
@@ -273,6 +275,7 @@ SET(SOURCES
   framework/async/ServerScan.h
   framework/BuildDefines.h
   framework/BuildVersion.h
+  framework/BuildVersion.cpp
   framework/CmdSystem.cpp
   framework/CmdSystem.h
   framework/Common.cpp
@@ -365,9 +368,19 @@ SET(SOURCES
   renderer/Model_md3.cpp
   renderer/Model_md3.h
   renderer/Model_md5.cpp
+  renderer/Model_obj.cpp
+  renderer/Model_obj.h
   renderer/Model_prt.cpp
   renderer/Model_sprite.cpp
   renderer/qgl.h
+  renderer/RenderMatrix.h
+  renderer/RenderMatrix.cpp
+  renderer/RenderList.h
+  renderer/RenderList.cpp
+  renderer/RenderList_interaction.cpp
+  renderer/RenderList_depth.cpp
+  renderer/RenderList_stages.cpp
+  renderer/RenderList_shadowmap.cpp
   renderer/RenderEntity.cpp
   renderer/RenderSystem.cpp
   renderer/RenderSystem.h
@@ -380,6 +393,8 @@ SET(SOURCES
   renderer/RenderWorld_load.cpp
   renderer/RenderWorld_local.h
   renderer/RenderWorld_portals.cpp
+  renderer/Sampler.h
+  renderer/Sampler.cpp
   renderer/simplex.h
   renderer/tr_backend.cpp
   renderer/tr_deform.cpp
@@ -405,6 +420,8 @@ SET(SOURCES
   renderer/wglext.h
   renderer/ImmediateMode.h
   renderer/ImmediateMode.cpp
+  renderer/ShadowMapAllocator.h
+  renderer/ShadowMapAllocator.cpp
 
   sound/snd_cache.cpp
   sound/snd_decoder.cpp
@@ -1093,14 +1110,5 @@ IF(WIN32)
 
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/base"
   )
-
-#  add_custom_target(make_zip 
-#    COMMAND ${CMAKE_COMMAND} -E tar "cfv" "fhDOOM.zip" --format=zip "fhDOOM"
-#    DEPENDS copy_game_files
-#    WORKING_DIRECTORY "${DIST_DIR}"
-#  )
-
-#  set_target_properties(copy_game_files PROPERTIES EXCLUDE_FROM_ALL TRUE)
-#  set_target_properties(make_zip PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
 ENDIF()

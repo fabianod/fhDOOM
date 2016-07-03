@@ -54,10 +54,6 @@ const int NumEvarPrefixes = sizeof(EvarPrefixes) / sizeof(evarPrefix_t);
 
 eclass_t	*eclass = NULL;
 eclass_t	*eclass_bad = NULL;
-char		eclass_directory[1024];
-
-// md3 cache for misc_models
-eclass_t *g_md3Cache = NULL;
 
 /*
 
@@ -86,7 +82,6 @@ void CleanEntityList( eclass_t *&pList ) {
 void CleanUpEntities()
 {
 	CleanEntityList(eclass);
-	CleanEntityList(g_md3Cache);
 
 	if ( eclass_bad ) {
 		delete eclass_bad;
@@ -111,23 +106,16 @@ bool LoadModel(const char *pLocation, eclass_t *e, idVec3 &vMin, idVec3 &vMax, c
 	return false;
 }
 
-eclass_t *EClass_Alloc( void ) {
-	eclass_t *e;
-	e = new eclass_t;
-	if ( e == NULL ) {
-		return NULL;
-	}
+eclass_t *EClass_Alloc( void ) {	
+	eclass_t *e = new eclass_t;
 	e->fixedsize = false;
-	e->unknown = false;
 	e->mins.Zero();
 	e->maxs.Zero();
 	e->color.Zero();
 	memset( &e->texdef, 0, sizeof( e->texdef ) );
 	e->modelHandle = NULL;
 	e->entityModel = NULL;
-	e->nFrame = 0;
 	e->nShowFlags = 0;
-	e->hPlug = 0;
 	e->next = NULL;
 	return e;
 }

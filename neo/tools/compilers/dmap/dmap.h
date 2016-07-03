@@ -177,10 +177,17 @@ typedef struct tree_s {
 
 #define	MAX_QPATH			256			// max length of a game pathname
 
+struct mapSurface_t {
+	srfTriangles_t* tris;
+	const idMaterial* material;
+};
+
 typedef struct {
 	idRenderLightLocal	def;
 	char		name[MAX_QPATH];		// for naming the shadow volume surface and interactions
-	srfTriangles_t	*shadowTris;
+	srfTriangles_t* shadowTris;
+
+	mapSurface_t occluders[128];
 } mapLight_t;
 
 #define	MAX_GROUP_LIGHTS	16
@@ -322,6 +329,8 @@ typedef struct {
 	bool	noLightCarve;		// extra triangle subdivision by light frustums
 	shadowOptLevel_t	shadowOptLevel;
 	bool	noShadow;			// don't create optimized shadow volumes
+
+	bool    exportObj;
 
 	idBounds	drawBounds;
 	bool	drawflag;
@@ -534,7 +543,8 @@ void		ClipTriList( const mapTri_t *list, const idPlane &plane, float epsilon, ma
 // output.cpp
 
 srfTriangles_t	*ShareMapTriVerts( const mapTri_t *tris );
-void WriteOutputFile( void );
+void WriteProcFile( void );
+void WriteOclFile( void );
 
 //=============================================================================
 
@@ -544,3 +554,4 @@ srfTriangles_t *CreateLightShadow( optimizeGroup_t *shadowerGroups, const mapLig
 void		FreeBeamTree( struct beamTree_s *beamTree );
 
 void		CarveTriByBeamTree( const struct beamTree_s *beamTree, const mapTri_t *tri, mapTri_t **lit, mapTri_t **unLit );
+

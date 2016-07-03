@@ -1,9 +1,5 @@
 layout(binding = 6) uniform sampler2D texture6;
 layout(binding = 7) uniform sampler2D texture7;
-layout(binding = 8) uniform sampler2D texture8;
-layout(binding = 9) uniform sampler2D texture9;
-layout(binding = 10) uniform sampler2D texture10;
-layout(binding = 11) uniform sampler2D texture11;
 
 vec4 offset_lookup(sampler2D map, vec2 coord, vec2 offset)
 {
@@ -19,42 +15,93 @@ float isOccluded(sampler2D map, vec2 coord, vec2 offset, float ref)
     return 0.0;
 }
 
-float getShadow(vec4 pos, sampler2D tex)
+float linearDepth(float expDepth, float n, float f) {
+  float z = (2 * n) / (f + n - expDepth * (f - n));
+
+  return z;
+}
+
+mat2 getJitter()
+{
+    vec2 jitter = texture(texture7, frag.worldspacePosition.xy + frag.worldspacePosition.zz ).xy;
+    float cosinus = (jitter.x * 2) - 1;
+    float sinus = (jitter.y * 2) - 1;
+
+    return mat2(cosinus, sinus, -sinus, cosinus);  
+}
+
+#define DECLARE_POISSON_SAMPLE(KernelSize) float poissonSample(vec2 kernel[KernelSize], vec3 pos, vec2 texsize) { \
+    mat2 rot = getJitter(); \
+\
+    float bias = 0.000; \
+    float ret = 0; \
+    for(int i=0;i<KernelSize; ++i) { \
+       float f = texture(texture6, pos.st + (rot * kernel[i]) * texsize).x; \
+       if( f < (pos.z - bias) ) \
+          ret += 1.0; \
+    } \
+    return ret/KernelSize; \
+}
+
+DECLARE_POISSON_SAMPLE(6)
+DECLARE_POISSON_SAMPLE(9)
+DECLARE_POISSON_SAMPLE(12)
+DECLARE_POISSON_SAMPLE(15)
+
+
+#define DECLARE_PCF_SAMPLE(KernelSize) float pcfSample(vec2 kernel[KernelSize], vec3 pos, vec2 texsize) { \
+    float bias = 0.00; \
+    float ret = 0; \
+    for(int i=0;i<KernelSize; ++i) { \
+       float f = texture(texture6, pos.st + kernel[i] * texsize).x; \
+       if( f < (pos.z - bias) ) \
+          ret += 1.0; \
+    } \
+    return ret/KernelSize; \
+}
+
+DECLARE_PCF_SAMPLE(4)
+DECLARE_PCF_SAMPLE(9)
+DECLARE_PCF_SAMPLE(13)
+DECLARE_PCF_SAMPLE(21)
+
+float getShadow(vec4 pos, vec2 coordScale, vec2 coordOffset, vec2 softness)
 {   
     pos = pos / pos.w;
 
     pos.x = pos.x/2.0 + 0.5;
     pos.y = pos.y/2.0 + 0.5;
-    pos.z = pos.z/2.0 + 0.5;    
+    pos.z = pos.z/2.0 + 0.5;   
 
-//#define FILTER_PCF
+    pos.x *= coordScale.x; 
+    pos.y *= coordScale.y; 
+
+    pos.x += coordOffset.x;
+    pos.y += coordOffset.y;
+
 //#define FILTER_PCF4
 //#define FILTER_PCF9
 //#define FILTER_PCF13
-#define FILTER_PCF21
-
-  //vec2 texsize = 1.0/textureSize(tex, 0) * 3 * rpShadowParams.x;
-  vec2 texsize = vec2(1,1) * 0.003 * rpShadowParams.x;
+//#define FILTER_PCF21
+//#define FILTER_POISSON6
+#define FILTER_POISSON9
+//#define FILTER_POISSON12    
+//#define FILTER_POISSON15
+ 
+  vec2 texsize = coordScale * softness;
 
 #if defined(FILTER_PCF4)
-    const vec2 kernel2x2[4] = vec2[](
+    const vec2 kernel[4] = vec2[](
       vec2(1,0),
       vec2(-1,0),
       vec2(0,1),
       vec2(0,-1)
     );
 
-    float foo = 0;
-    for(int i=0;i<4; ++i) {
-       float f = texture(tex, pos.st + kernel2x2[i] * texsize).x;
-       if( f <= pos.z )
-          foo += 1.0;       
-    }
-
-    return foo/4.0;
+    return pcfSample(kernel, pos.xyz, texsize);
 
 #elif defined(FILTER_PCF9)
-    const vec2 kernel3x3[9] = vec2[](
+    const vec2 kernel[9] = vec2[](
       vec2(-1,1),
       vec2(0,1),
       vec2(1,1),
@@ -66,17 +113,10 @@ float getShadow(vec4 pos, sampler2D tex)
       vec2(1,-1)
     );
 
-    float foo = 0;
-    for(int i=0;i<9; ++i) {
-       float f = texture(tex, pos.st + kernel3x3[i] * texsize).x;
-       if( f < pos.z )
-          foo += 1.0;       
-    }
-
-    return foo/9.0;
+    return pcfSample(kernel, pos.xyz, texsize);
 
 #elif defined(FILTER_PCF13)
-    const vec2 kernel3x3[13] = vec2[](
+    const vec2 kernel[13] = vec2[](
       vec2(0, 1),
       vec2(0, -1),
       vec2(-1, 0),
@@ -92,17 +132,10 @@ float getShadow(vec4 pos, sampler2D tex)
       vec2(0.5,-0.5)
     );
 
-    float foo = 0;
-    for(int i=0;i<13; ++i) {
-       float f = texture(tex, pos.st + kernel3x3[i] * texsize).x;
-       if( f < pos.z )
-          foo += 1.0;       
-    }
-
-    return foo/13.0;
+    return pcfSample(kernel, pos.xyz, texsize);
 
 #elif defined(FILTER_PCF21)
-    const vec2 kernel3x3[21] = vec2[](
+    const vec2 kernel[21] = vec2[](
       vec2(0.5, 1),
       vec2(0.5, -1),
       vec2(-0.5, 1),
@@ -128,85 +161,165 @@ float getShadow(vec4 pos, sampler2D tex)
       vec2(0.5,-0.5)
     );
 
-    int foo = 0;
-    int i=0;
-    for(;i<8; ++i) {
-       float f = texture(tex, pos.st + kernel3x3[i] * texsize).x;
-       if( f < pos.z )
-          foo += 1;       
-    }
-/*
-    if(foo == 0)
-      return 0.0;
+    return pcfSample(kernel, pos.xyz, texsize);
+#elif defined(FILTER_POISSON6)
+    const vec2 kernel[6] = vec2[](
+      vec2(-0.4397209, -0.3645),
+      vec2(-0.6508484, 0.4861422),
+      vec2(0.3237945, -0.1611787),
+      vec2(0.008111006, 0.7074075),
+      vec2(0.09966598, -0.8482586),
+      vec2(0.8881027, 0.4371758)
+    );
 
-    if(foo == 8)
-      return 1.0;
-*/
-    for(;i<21; ++i) {
-       float f = texture(tex, pos.st + kernel3x3[i] * texsize).x;
-       if( f < pos.z )
-          foo += 1;       
-    }
+    return poissonSample(kernel, pos.xyz, texsize);
 
-    return foo/21.0;
+#elif defined(FILTER_POISSON9)
+    const vec2 kernel[9] = vec2[](
+      vec2(0.01946597, -0.9665399),
+      vec2(-0.2643075, -0.2529854),
+      vec2(-0.6608061, -0.5971643),
+      vec2(0.5533955, -0.560185),
+      vec2(-0.6723549, 0.1494021),
+      vec2(0.8941639, 0.0498636),
+      vec2(0.3074718, 0.2643286),
+      vec2(-0.2686456, 0.9057658),
+      vec2(0.5373921, 0.8100548)
+    );
 
-#elif defined(FILTER_PCF)
-    float occluded = 0;
-    int samplesTaken = 0;
-    float d = 0.003 * rpShadowParams.x; //modulate 'base' softness by shadowSoftness parameter
+    return poissonSample(kernel, pos.xyz, texsize);
+   
+#elif defined(FILTER_POISSON12)
+    const vec2 kernel[12] = vec2[](
+      vec2(0.3665185, -0.903574),
+      vec2(0.6162645, -0.4545356),
+      vec2(-0.2486034, -0.6077372),
+      vec2(0.05140426, -0.2567643),
+      vec2(-0.2610345, 0.07457025),
+      vec2(0.2511628, 0.2595751),
+      vec2(-0.6152166, -0.318685),
+      vec2(0.8690009, -0.03180576),
+      vec2(-0.9257081, 0.1798257),
+      vec2(-0.1923947, 0.5614256),
+      vec2(0.2714329, 0.7173462),
+      vec2(-0.7179349, 0.6915267)
+    );
 
-    if(d<0.0001)
-      return isOccluded(tex, pos.st, vec2(0,0), pos.z);
+    return poissonSample(kernel, pos.xyz, texsize);
+#elif defined(FILTER_POISSON15)
+    const vec2 kernel[15] = vec2[](
+      vec2(0.3886908, 0.3622644),
+      vec2(0.01367045, 0.7141614),
+      vec2(-0.1952952, 0.261395),
+      vec2(0.167147, -0.08671506),
+      vec2(0.5340464, -0.3375779),
+      vec2(0.7503276, 0.1110756),
+      vec2(-0.02910505, -0.5694501),
+      vec2(0.3916242, -0.7194775),
+      vec2(-0.3699134, -0.1326576),
+      vec2(0.49934, 0.835238),
+      vec2(-0.8104502, 0.05760445),
+      vec2(-0.571758, 0.6056085),
+      vec2(-0.8419966, -0.3448843),
+      vec2(-0.5124402, -0.6106064),
+      vec2(-0.2231808, -0.9203894)
+    );
 
-    float s = d/4;
-    for(float i=-d;i<d;i+=s) {
-      for(float j=-s;j<d;j+=s) {
-
-        vec2 coord = pos.st + vec2(i,j);
-                    
-        
-        float f = texture(tex, coord).x;
-        if( f < pos.z )
-          occluded += 1.0;
-
-        samplesTaken += 1;
-      }     
-    }   
-
-    return occluded/samplesTaken;
+    return poissonSample(kernel, pos.xyz, texsize);
 #else    
-    return isOccluded(tex, pos.st, vec2(0,0), pos.z);
+    return isOccluded(texture6, pos.st, vec2(0,0), pos.z);
 #endif  
 
 }
 
-float projectedShadow(vec4 pos)
+vec4 projectedShadow(vec4 pos, vec2 softness)
 {
-  return getShadow(pos, texture6);
+  float f = getShadow(pos, rpShadowCoords[0].xy, rpShadowCoords[0].zw, softness);
+
+  f = mix(1, rpShadowParams.y, f);
+
+  return vec4(f,f,f,f);
 }
 
-float pointlightShadow(vec4 pos[6], vec3 toGlobalLightOrigin)
+vec4 getParallelShadow(vec4 pos[6], int index, vec2 softness)
+{
+  vec4 debugColors[6] = vec4[](
+    vec4(1,1,1,1),
+    vec4(1,0,0,1),
+    vec4(1,1,0,1),
+    vec4(0,1,0,1),
+    vec4(0,1,1,1),
+    vec4(0,0,1,1)
+  );
+
+  float f = getShadow(pos[index], rpShadowCoords[index].xy, rpShadowCoords[index].zw, softness);
+
+  float ret = mix(1, rpShadowParams.y, f);
+
+#if 0
+  return debugColors[index] * ret;
+#else
+  return vec4(ret, ret, ret, 1);
+#endif    
+}
+
+vec4 parallelShadow(vec4 pos[6], float distance, vec2 softness)
+{ 
+  const float referenceSize = 256;  
+
+  int i=0;
+
+  vec4 nextCascade = vec4(1,1,1,1);
+  float nextfraction = 0; 
+
+  for(; i<5; ++i)
+  {
+    float t = 10 * (i+1);//rpCascadeDistances[i+1] * 0.1;
+
+    if(distance < (rpCascadeDistances[i] - t))
+    {
+      break;
+    }
+
+    if(distance < (rpCascadeDistances[i] + t))
+    {
+      vec2 shadowmapSize = rpShadowMapSize[i+1].zw;
+      nextCascade = getParallelShadow(pos, i+1, softness * vec2(referenceSize / shadowmapSize.x, referenceSize / shadowmapSize.y));
+      nextfraction = (distance - (rpCascadeDistances[i] - t)) / (2*t);
+      break;
+    }    
+  }
+
+  vec2 shadowmapSize = rpShadowMapSize[i].zw;
+
+  softness = softness * vec2(referenceSize / shadowmapSize.x, referenceSize / shadowmapSize.y);
+
+  return mix(getParallelShadow(pos, i, softness), nextCascade, nextfraction);
+  //return getParallelShadow(pos, 5, softness * softscale[5]);  
+}
+
+vec4 pointlightShadow(vec4 pos[6], vec3 toLightOrigin, vec2 softness)
 {  
-  vec3 d = toGlobalLightOrigin;
+  vec3 d = toLightOrigin;
 
   int side = 0;
   float l = d.x;
 
 
   if( d.y > l ) {
-    side = 1;
+    side = 2;
     l = d.y;
   }
   if( d.z > l ) {
-    side = 2;
+    side = 4;
     l = d.z;
   }
   if( -d.x > l ) {
-    side = 3;
+    side = 1;
     l = -d.x;
   }
   if( -d.y > l ) {
-    side = 4;
+    side = 3;
     l = -d.y;
   }
   if( -d.z > l ) {
@@ -214,30 +327,9 @@ float pointlightShadow(vec4 pos[6], vec3 toGlobalLightOrigin)
     l = -d.z;
   }   
 
-  if(side == 0)
-  {  
-    return getShadow(pos[0], texture6); 
-  }
+  float f = getShadow(pos[side], rpShadowCoords[side].xy, rpShadowCoords[side].zw, softness);  
 
-  if(side == 1)
-  {  
-    return getShadow(pos[2], texture8); 
-  }  
+  f = mix(1, rpShadowParams.y, f);
 
-  if(side == 2)
-  {  
-    return getShadow(pos[4], texture10); 
-  }   
-
-  if(side == 3)
-  {  
-    return getShadow(pos[1], texture7); 
-  }   
-
-  if(side == 4)
-  {  
-    return getShadow(pos[3], texture9); 
-  }  
-
-  return getShadow(pos[5], texture11); 
+  return vec4(f,f,f,f);   
 }

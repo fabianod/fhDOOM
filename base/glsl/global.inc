@@ -1,4 +1,5 @@
-#version 430
+#version 330
+#extension GL_ARB_shading_language_420pack: enable
 
 uniform mat4 rpModelMatrix;
 uniform mat4 rpViewMatrix;
@@ -48,3 +49,8 @@ uniform mat4 rpPointlightProjection[6];
 
 uniform vec4 rpGlobalLightOrigin;
 uniform vec4 rpShadowParams; //x=minBias, y=maxbias, z=fuzzyness, w=samples
+uniform vec4 rpShadowCoords[6];
+uniform vec4 rpShadowMapSize[6];  //xy = width/height of far plane, zw = near/far clip distance
+                                  //TODO(johl): is width/height correctly set for non-parallel lights? 
+uniform float rpCascadeDistances[5];
+uniform mat4 rpInverseLightRotation;
